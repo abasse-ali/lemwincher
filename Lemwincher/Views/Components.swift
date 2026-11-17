@@ -319,6 +319,8 @@ struct ChainIndexBadge: View {
         let color: Color = cheaper ? Color.brand : (pricier ? Color.orange : Color.secondary)
         Text(entry.differenceText)
             .font(.caption.bold().monospacedDigit())
+            .lineLimit(1)
+            .fixedSize()
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(color.opacity(0.15), in: Capsule())
