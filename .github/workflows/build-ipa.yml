@@ -7,8 +7,14 @@ on:
 
 jobs:
   build:
-    name: Compiler l'IPA iPhone
-    runs-on: macos-latest
+    name: Compiler l'IPA iPhone (${{ matrix.runner }})
+    # Deux types de Mac en parallèle : le premier disponible fournit l'IPA
+    # (les Mac Apple Silicon de GitHub sont parfois saturés).
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15-intel, macos-latest]
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
       - name: Récupérer le code
@@ -54,7 +60,7 @@ jobs:
       - name: Publier l'IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Lemwincher-ipa
+          name: Lemwincher-ipa-${{ matrix.runner }}
           path: Lemwincher.ipa
           if-no-files-found: error
 
@@ -67,5 +73,5 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: xcodebuild-log
+          name: xcodebuild-log-${{ matrix.runner }}
           path: xcodebuild.log
