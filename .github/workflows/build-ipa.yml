@@ -60,7 +60,8 @@ jobs:
 
       - name: Afficher les erreurs de compilation
         if: failure()
-        run: grep -E "error:|warning: .*will be an error" xcodebuild.log | sort -u | head -60 || true
+        run: |
+          grep -E "error:|will be an error" xcodebuild.log | sort -u | head -80 || true
 
       - name: Journal complet (en cas d'erreur)
         if: failure()
