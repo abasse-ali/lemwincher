@@ -17,11 +17,18 @@ struct ShoppingListView: View {
     /// Articles dépliés (produits précis affichés en dessous).
     @State private var expanded: Set<UUID> = []
 
-    private func expansion(for id: UUID) -> Binding<Bool> {
+    /// Déplier un article lance la recherche de ses produits précis.
+    private func expansion(for item: ShoppingItem) -> Binding<Bool> {
         Binding(
-            get: { expanded.contains(id) },
+            get: { expanded.contains(item.id) },
             set: { open in
-                if open { expanded.insert(id) } else { expanded.remove(id) }
+                if open {
+                    expanded.insert(item.id)
+                    let query = item.product.name
+                    Task { await model.loadSuggestions(for: query) }
+                } else {
+                    expanded.remove(item.id)
+                }
             }
         )
     }
@@ -107,7 +114,7 @@ struct ShoppingListView: View {
                 } else {
                     Section {
                         ForEach($bindable.state.shoppingList) { $item in
-                            DisclosureGroup(isExpanded: expansion(for: item.id)) {
+                            DisclosureGroup(isExpanded: expansion(for: item)) {
                                 ProductChoicesView(item: item) { product in
                                     path.append(product)
                                 }
@@ -543,13 +550,15 @@ struct ProductChoicesView: View {
                 }
                 .buttonStyle(.borderless)
             }
-            if results.loading && results.items.isEmpty {
+            // Toujours au moins une ligne tant que rien n'est chargé (une zone vide ne se chargerait jamais).
+            if !results.loaded && results.items.isEmpty {
                 HStack(spacing: 10) {
                     ProgressView()
                     Text("Recherche des produits et de leurs prix…")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
+                .task(id: query) { await model.loadSuggestions(for: query) }
             }
             if results.loaded && results.items.isEmpty {
                 Text("Aucun produit trouvé pour « \(query) ».")
@@ -583,7 +592,6 @@ struct ProductChoicesView: View {
                 .accessibilityIdentifier("moreSuggestions")
             }
         }
-        .task(id: query) { await model.loadSuggestions(for: query) }
     }
 }
 

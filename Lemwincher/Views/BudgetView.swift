@@ -164,16 +164,18 @@ struct BudgetView: View {
     private func breakdownSection(summary: BudgetSummary, currency: String) -> some View {
         let byStore = BudgetEngine.shares(summary.expenses) { $0.storeName ?? "Sans magasin" }
         let byCategory = BudgetEngine.shares(summary.expenses) { $0.category.label }
-        if byStore.count > 1 || byCategory.count > 1 {
-            Section("Où va votre argent") {
+        if byStore.count > 1 {
+            Section("Par magasin") {
                 ForEach(byStore.prefix(5)) { share in
                     ShareBar(share: share, currency: currency, icon: "storefront")
                 }
-                if byCategory.count > 1 {
-                    ForEach(byCategory) { share in
-                        ShareBar(share: share, currency: currency,
-                                 icon: ExpenseCategory.allCases.first { $0.label == share.name }?.icon ?? "circle")
-                    }
+            }
+        }
+        if byCategory.count > 1 {
+            Section("Par catégorie") {
+                ForEach(byCategory) { share in
+                    ShareBar(share: share, currency: currency,
+                             icon: ExpenseCategory.allCases.first { $0.label == share.name }?.icon ?? "circle")
                 }
             }
         }
@@ -251,6 +253,7 @@ struct BudgetGauge: View {
                     Text(daysText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Text(summary.message(currency: currency))
