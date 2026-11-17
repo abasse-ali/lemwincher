@@ -214,6 +214,24 @@ final class LemwincherUITests: XCTestCase {
         }
         sleep(12)
         snapshot("13-ma-liste")
+
+        // Un article générique se déplie : les vrais produits en dessous, avec leur prix.
+        let eggs = app.staticTexts["Œufs"].firstMatch
+        if eggs.waitForExistence(timeout: 5) {
+            eggs.tap()
+            _ = element(app, "suggestion").waitForExistence(timeout: 30)
+            sleep(3)
+            snapshot("13b-liste-oeufs-deplies")
+            let first = element(app, "suggestion")
+            if first.exists && first.isHittable {
+                first.tap()
+                sleep(2)
+                snapshot("13c-liste-oeufs-choisis")
+            }
+            eggs.tap()
+            sleep(1)
+        }
+
         app.swipeUp()
         sleep(1)
         snapshot("14-ma-liste-magasins")

@@ -203,9 +203,15 @@ struct MyPrice: Identifiable, Codable, Hashable {
 
 struct ShoppingItem: Identifiable, Codable, Hashable {
     var id = UUID()
+    /// Ce que l'utilisateur a noté ("Œufs") ou un produit précis.
     var product: Product
     var quantity: Int = 1
     var checked: Bool = false
+    /// Produit précis choisi sous un article générique ("6 œufs plein air Loué").
+    var choice: Product? = nil
+
+    /// Le produit dont on compare le prix : le choix s'il existe.
+    var pricedProduct: Product { choice ?? product }
 }
 
 /// Un produit dont on surveille le prix autour de soi.

@@ -13,10 +13,22 @@ struct ShoppingListView: View {
     @State private var customName = ""
     @State private var quickAdd = ""
     @State private var showShoppingDone = false
+    @State private var path = NavigationPath()
+    /// Articles dépliés (produits précis affichés en dessous).
+    @State private var expanded: Set<UUID> = []
+
+    private func expansion(for id: UUID) -> Binding<Bool> {
+        Binding(
+            get: { expanded.contains(id) },
+            set: { open in
+                if open { expanded.insert(id) } else { expanded.remove(id) }
+            }
+        )
+    }
 
     /// Change quand la liste de produits ou la zone change : relance la comparaison.
     private var listKey: String {
-        model.state.shoppingList.map(\.product.code).sorted().joined(separator: ",") + "#" + model.locationKey
+        model.state.shoppingList.map(\.pricedProduct.code).sorted().joined(separator: ",") + "#" + model.locationKey
     }
 
     // MARK: Calcul du panier
@@ -27,7 +39,7 @@ struct ShoppingListView: View {
         let radius = model.radiusMeters
         let currency = model.settings.currency
         let country = model.country
-        let codes = Set(items.map(\.product.code))
+        let codes = Set(items.map(\.pricedProduct.code))
 
         var localByCode = local.mapValues { list in list.filter { $0.currency == currency } }
         let mine = PriceEngine.observations(from: model.state.myPrices.filter { codes.contains($0.product.code) })
@@ -78,7 +90,7 @@ struct ShoppingListView: View {
 
     var body: some View {
         @Bindable var bindable = model
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 quickAddSection
                 budgetSection
@@ -93,13 +105,24 @@ struct ShoppingListView: View {
                             .buttonStyle(.bordered)
                     }
                 } else {
-                    Section("Produits (\(model.state.shoppingList.count))") {
+                    Section {
                         ForEach($bindable.state.shoppingList) { $item in
-                            ShoppingRow(item: $item)
+                            DisclosureGroup(isExpanded: expansion(for: item.id)) {
+                                ProductChoicesView(item: item) { product in
+                                    path.append(product)
+                                }
+                            } label: {
+                                ShoppingRow(item: $item)
+                            }
+                            .accessibilityIdentifier("shoppingItem")
                         }
                         .onDelete { offsets in
                             bindable.state.shoppingList.remove(atOffsets: offsets)
                         }
+                    } header: {
+                        Text("Produits (\(model.state.shoppingList.count))")
+                    } footer: {
+                        Text("Touchez un article pour voir les produits correspondants et leur prix, puis choisissez celui que vous achetez.")
                     }
                     if !model.state.settings.favoriteStores.isEmpty {
                         Section {
@@ -159,7 +182,7 @@ struct ShoppingListView: View {
                 shoppingDoneEditor
             }
             .task(id: listKey) {
-                await model.checkRecalls(for: model.state.shoppingList.map(\.product.code))
+                await model.checkRecalls(for: model.state.shoppingList.map(\.pricedProduct.code))
                 await loadPrices()
                 await model.enrichProducts()
             }
@@ -307,7 +330,7 @@ struct ShoppingListView: View {
     @ViewBuilder
     private var recallSection: some View {
         let recalled = model.state.shoppingList.compactMap { item -> RecalledItem? in
-            guard let recall = model.recall(for: item.product.code) else { return nil }
+            guard let recall = model.recall(for: item.pricedProduct.code) else { return nil }
             return RecalledItem(item: item, recall: recall)
         }
         if !recalled.isEmpty {
@@ -366,7 +389,7 @@ struct ShoppingListView: View {
                 ForEach(result.bestSplit) { line in
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(line.item.quantity > 1 ? "\(line.item.quantity) × \(line.item.product.name)" : line.item.product.name)
+                            Text(line.item.quantity > 1 ? "\(line.item.quantity) × \(line.item.pricedProduct.name)" : line.item.pricedProduct.name)
                                 .lineLimit(1)
                             Text(line.storeName).font(.caption).foregroundStyle(.secondary)
                         }
@@ -409,7 +432,7 @@ struct ShoppingListView: View {
     }
 
     private func loadPrices() async {
-        let codes = Array(Set(model.state.shoppingList.map(\.product.code).filter { !$0.hasPrefix("custom:") }))
+        let codes = Array(Set(model.state.shoppingList.map(\.pricedProduct.code).filter { !$0.hasPrefix("custom:") }))
         guard !codes.isEmpty else {
             local = [:]
             national = [:]
@@ -471,14 +494,19 @@ struct ShoppingRow: View {
             }
             .buttonStyle(.plain)
 
-            ProductThumb(url: item.product.imageURL, size: 36)
+            ProductThumb(url: item.choice?.imageURL ?? item.product.imageURL, size: 36)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.product.name)
                     .strikethrough(item.checked)
                     .foregroundStyle(item.checked ? Color.secondary : Color.primary)
                     .lineLimit(2)
-                if let brand = item.product.brand {
+                if let choice = item.choice {
+                    Label(Fmt.join(choice.name, choice.brand, choice.quantity), systemImage: "arrow.turn.down.right")
+                        .font(.caption)
+                        .foregroundStyle(Color.brand)
+                        .lineLimit(2)
+                } else if let brand = item.product.brand {
                     Text(brand).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
@@ -487,6 +515,154 @@ struct ShoppingRow: View {
             Spacer(minLength: 4)
 
             QuantityControl(quantity: $item.quantity)
+        }
+    }
+}
+
+// MARK: - Produits précis sous un article
+
+/// Sous un article ("Œufs") : les produits correspondants avec leur meilleur prix, à choisir.
+struct ProductChoicesView: View {
+    @Environment(AppModel.self) private var model
+    let item: ShoppingItem
+    /// Ouvre le comparatif d'un produit.
+    let onOpen: (Product) -> Void
+
+    /// Ce qu'on cherche : le nom noté par l'utilisateur.
+    private var query: String { item.product.name }
+
+    var body: some View {
+        let results = model.suggestionResults(for: query)
+        Group {
+            if let choice = item.choice {
+                Button {
+                    model.choose(nil, for: item.id)
+                } label: {
+                    Label("Ne plus choisir « \(choice.name) »", systemImage: "xmark.circle")
+                        .font(.subheadline)
+                }
+                .buttonStyle(.borderless)
+            }
+            if results.loading && results.items.isEmpty {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Recherche des produits et de leurs prix…")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if results.loaded && results.items.isEmpty {
+                Text("Aucun produit trouvé pour « \(query) ».")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(results.items) { suggestion in
+                SuggestionRow(suggestion: suggestion,
+                              chosen: item.choice?.code == suggestion.product.code,
+                              onChoose: {
+                                  let same = item.choice?.code == suggestion.product.code
+                                  model.choose(same ? nil : suggestion.product, for: item.id)
+                              },
+                              onOpen: { onOpen(suggestion.product) })
+            }
+            if results.hasMore {
+                Button {
+                    Task { await model.loadSuggestions(for: query, more: true) }
+                } label: {
+                    HStack {
+                        Label("Plus de produits", systemImage: "plus.magnifyingglass")
+                        if results.loading {
+                            Spacer()
+                            ProgressView()
+                        }
+                    }
+                    .font(.subheadline)
+                }
+                .buttonStyle(.borderless)
+                .disabled(results.loading)
+                .accessibilityIdentifier("moreSuggestions")
+            }
+        }
+        .task(id: query) { await model.loadSuggestions(for: query) }
+    }
+}
+
+/// Un produit précis : photo, nom, contenance, meilleur prix ; toucher = le choisir, (i) = comparatif.
+struct SuggestionRow: View {
+    let suggestion: ProductSuggestion
+    let chosen: Bool
+    let onChoose: () -> Void
+    let onOpen: () -> Void
+
+    private var placeText: String? {
+        guard let offer = suggestion.offer else { return nil }
+        let distance: String? = offer.distance.map { Fmt.distance($0) }
+        if offer.isEstimate {
+            return Fmt.join("prix habituel chez \(offer.place)", distance)
+        }
+        return Fmt.join(offer.place, distance)
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button(action: onChoose) {
+                HStack(spacing: 10) {
+                    Image(systemName: chosen ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(chosen ? Color.brand : Color.secondary)
+                    ProductThumb(url: suggestion.product.imageURL, size: 40)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(suggestion.product.name)
+                            .font(.subheadline)
+                            .lineLimit(2)
+                        Text(Fmt.join(suggestion.product.brand, suggestion.product.quantity))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        if let placeText {
+                            Text(placeText)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .layoutPriority(1)
+                    Spacer(minLength: 4)
+                    priceView
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .tint(Color.primary)
+            .accessibilityIdentifier("suggestion")
+
+            Button(action: onOpen) {
+                Image(systemName: "info.circle")
+                    .font(.title3)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Comparer les prix de ce produit")
+        }
+    }
+
+    @ViewBuilder
+    private var priceView: some View {
+        if let offer = suggestion.offer {
+            VStack(alignment: .trailing, spacing: 1) {
+                Text((offer.isEstimate ? "≈ " : "") + Fmt.price(offer.price, offer.currency))
+                    .font(.subheadline.bold().monospacedDigit())
+                    .foregroundStyle(offer.isEstimate ? Color.primary : Color.brand)
+                if let unit = suggestion.product.normalizedAmount {
+                    Text(unit.unitPriceText(offer.price, currency: offer.currency))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } else if let grade = suggestion.nutriScore {
+            NutriMiniBadge(grade: grade)
+        } else {
+            Text("prix non relevé")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
     }
 }

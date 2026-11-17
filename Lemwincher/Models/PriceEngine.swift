@@ -301,11 +301,11 @@ enum PriceEngine {
 
         // Meilleure combinaison avec les vrais relevés.
         for item in items {
-            if let cheapest = latestByCode[item.product.code]?.min(by: { $0.price < $1.price }) {
+            if let cheapest = latestByCode[item.pricedProduct.code]?.min(by: { $0.price < $1.price }) {
                 result.bestSplit.append(BasketLine(item: item, price: cheapest.price, currency: cheapest.currency,
                                                    isEstimate: false, storeKey: cheapest.storeKey,
                                                    storeName: cheapest.storeName))
-            } else if (estimatesByCode[item.product.code] ?? []).isEmpty {
+            } else if (estimatesByCode[item.pricedProduct.code] ?? []).isEmpty {
                 result.unknown.append(item)
             }
         }
@@ -314,7 +314,7 @@ enum PriceEngine {
             var basket = StoreBasket(storeKey: store.id, storeName: store.name, store: store)
             let chain = store.chainKey
             for item in items {
-                let code = item.product.code
+                let code = item.pricedProduct.code
                 if let obs = latestByCode[code]?.first(where: { $0.storeKey == store.id }) {
                     basket.lines.append(BasketLine(item: item, price: obs.price, currency: obs.currency,
                                                    isEstimate: false, storeKey: store.id, storeName: store.name))

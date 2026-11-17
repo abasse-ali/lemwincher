@@ -47,6 +47,9 @@ final class AppModel {
     // Budget : message affiché après une dépense qui franchit 80 % ou 100 % du budget.
     var budgetAlert: String?
 
+    /// Produits précis proposés sous les articles de la liste, par recherche ("oeufs").
+    var suggestions: [String: SuggestionResults] = [:]
+
     let locationManager = LocationManager()
     let account = OpenPricesAccount()
     /// Lancé par les tests d'interface : données de démonstration à Toulouse, pas de GPS.
@@ -454,6 +457,55 @@ final class AppModel {
         BudgetEngine.savingsTip(expenses: budgetSummary.expenses, report: chainIndex, nearbyChains: nearestStoreByChain)
     }
 
+    // MARK: Produits précis sous un article de la liste
+
+    func suggestionResults(for query: String) -> SuggestionResults {
+        suggestions[SuggestionEngine.key(query)] ?? SuggestionResults()
+    }
+
+    /// Charge les produits correspondant à un article ("Œufs") : d'abord ceux qui ont des prix,
+    /// puis le catalogue complet, page par page (`more`).
+    @MainActor
+    func loadSuggestions(for query: String, more: Bool = false) async {
+        let key = SuggestionEngine.key(query)
+        guard !key.isEmpty else { return }
+        var results = suggestions[key] ?? SuggestionResults()
+        if results.loading || (results.loaded && !more) { return }
+        if more && !results.hasMore { return }
+        results.loading = true
+        suggestions[key] = results
+
+        if !results.loaded {
+            let context = SuggestionService.Context(reference: referenceLocation,
+                                                    radiusMeters: radiusMeters,
+                                                    country: country,
+                                                    currency: state.settings.currency,
+                                                    nearbyChains: nearestStoreByChain)
+            results.items = await SuggestionService.pricedSuggestions(for: query, context: context)
+        }
+        let catalogText = SuggestionEngine.catalogText(query)
+        if !catalogText.isEmpty,
+           let page = try? await CatalogAPI.search(text: catalogText, rayon: nil, page: results.catalogPage + 1, pageSize: 10) {
+            let known = Set(results.items.map(\.id))
+            let extra = page.items
+                .filter { !known.contains($0.id) }
+                .map { ProductSuggestion(product: $0.product, offer: nil, nutriScore: $0.nutriScore) }
+            results.items += extra
+            results.catalogPage = page.page
+            results.hasMore = page.hasMore && !page.items.isEmpty
+        }
+        results.loading = false
+        results.loaded = true
+        suggestions[key] = results
+    }
+
+    /// Choisit (ou retire) le produit précis d'un article de la liste.
+    func choose(_ product: Product?, for itemID: UUID) {
+        guard let index = state.shoppingList.firstIndex(where: { $0.id == itemID }) else { return }
+        state.shoppingList[index].choice = product
+        if let product { remember(product) }
+    }
+
     // MARK: Photos et fiches des produits
 
     /// Complète (photo, marque, contenance) les produits de la liste, des suivis et des consultés récemment.
@@ -527,7 +579,7 @@ final class AppModel {
     }
 
     func isInList(_ product: Product) -> Bool {
-        state.shoppingList.contains { $0.product.code == product.code }
+        state.shoppingList.contains { $0.product.code == product.code || $0.choice?.code == product.code }
     }
 
     /// Remplace la fiche d'un produit de la liste (nom, photo…) une fois trouvée.
@@ -539,8 +591,16 @@ final class AppModel {
 
     /// Texte de la liste pour la partager (Messages, WhatsApp…).
     var shoppingListText: String {
-        let lines = state.shoppingList.map { item in
-            (item.checked ? "✓ " : "• ") + (item.quantity > 1 ? "\(item.quantity) × " : "") + item.product.name
+        var lines: [String] = []
+        for item in state.shoppingList {
+            var line = item.checked ? "✓ " : "• "
+            if item.quantity > 1 { line += "\(item.quantity) × " }
+            line += item.product.name
+            if let choice = item.choice {
+                let brand = choice.brand.map { ", " + $0 } ?? ""
+                line += " (\(choice.name)\(brand))"
+            }
+            lines.append(line)
         }
         return "Ma liste de courses (Lemwincher)\n" + lines.joined(separator: "\n")
     }

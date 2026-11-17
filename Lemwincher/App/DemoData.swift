@@ -23,6 +23,7 @@ enum DemoData {
 
         let bananas = Product.custom(named: "Bananes (1 kg)")
         state.shoppingList = [
+            ShoppingItem(product: .custom(named: "Œufs")),
             ShoppingItem(product: nutella),
             ShoppingItem(product: madeleines, quantity: 2),
             ShoppingItem(product: nocciolata),
