@@ -50,6 +50,26 @@ enum Fmt {
     static func join(_ parts: String?...) -> String {
         parts.compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
+
+    /// Prix d'un carburant au litre : "1,849 €".
+    static func fuel(_ value: Double) -> String {
+        String(format: "%.3f", value).replacingOccurrences(of: ".", with: ",") + " €"
+    }
+
+    /// "à l'instant", "il y a 25 min", "il y a 3 h", puis la date.
+    static func ago(_ date: Date, now: Date = Date()) -> String {
+        let seconds = now.timeIntervalSince(date)
+        if seconds < 60 { return "à l'instant" }
+        if seconds < 3600 { return "il y a \(Int(seconds / 60)) min" }
+        if seconds < 24 * 3600 { return "il y a \(Int(seconds / 3600)) h" }
+        return day(date)
+    }
+
+    /// "+8 %", "-12 %".
+    static func percent(_ value: Double) -> String {
+        let rounded = Int(value.rounded())
+        return rounded > 0 ? "+\(rounded) %" : "\(rounded) %"
+    }
 }
 
 // MARK: - Navigation commune
@@ -102,6 +122,7 @@ struct ProductThumb: View {
 struct StoreLogo: View {
     let url: String?
     var size: CGFloat = 40
+    var systemImage: String = "storefront.fill"
 
     var body: some View {
         ZStack {
@@ -123,9 +144,141 @@ struct StoreLogo: View {
     }
 
     private var icon: some View {
-        Image(systemName: "storefront.fill")
+        Image(systemName: systemImage)
             .font(.system(size: size * 0.45))
             .foregroundStyle(Color.brand)
+    }
+}
+
+/// "Ouvert · ferme à 20h" en vert, "Fermé · ouvre à 8h30" en rouge.
+struct OpenStatusLabel: View {
+    let hours: OpeningHours
+
+    var body: some View {
+        let now = Date()
+        let open = hours.status(at: now).isOpen
+        Label(hours.statusText(at: now), systemImage: "clock")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(open ? Color.brand : Color.red)
+            .lineLimit(1)
+    }
+}
+
+/// Lettre de score (Nutri-Score, Éco-Score) sur fond coloré.
+struct GradeBadge: View {
+    let title: String
+    let grade: String
+
+    private var color: Color {
+        switch grade.lowercased() {
+        case "a": return Color(red: 0.0, green: 0.52, blue: 0.25)
+        case "b": return Color(red: 0.52, green: 0.74, blue: 0.17)
+        case "c": return Color(red: 0.98, green: 0.78, blue: 0.0)
+        case "d": return Color(red: 0.93, green: 0.48, blue: 0.0)
+        default: return Color(red: 0.89, green: 0.18, blue: 0.12)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text(grade.uppercased())
+                .font(.title3.bold())
+                .foregroundStyle(Color.white)
+                .frame(width: 38, height: 38)
+                .background(color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Groupe NOVA (1 = brut … 4 = ultra-transformé).
+struct NovaBadge: View {
+    let group: Int
+
+    private var color: Color {
+        switch group {
+        case 1: return Color(red: 0.0, green: 0.52, blue: 0.25)
+        case 2: return Color(red: 0.98, green: 0.78, blue: 0.0)
+        case 3: return Color(red: 0.93, green: 0.48, blue: 0.0)
+        default: return Color(red: 0.89, green: 0.18, blue: 0.12)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text("\(group)")
+                .font(.title3.bold())
+                .foregroundStyle(Color.white)
+                .frame(width: 38, height: 38)
+                .background(color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            Text("NOVA")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Nutri-Score, NOVA, Éco-Score, labels et allergènes d'un produit.
+struct ProductFactsView: View {
+    let facts: ProductFacts
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 14) {
+                if let grade = facts.nutriScore {
+                    GradeBadge(title: "Nutri-Score", grade: grade)
+                }
+                if let nova = facts.nova {
+                    NovaBadge(group: nova)
+                }
+                if let grade = facts.ecoScore {
+                    GradeBadge(title: "Éco-Score", grade: grade)
+                }
+            }
+            if !facts.labels.isEmpty {
+                Label(facts.labels.joined(separator: " · "), systemImage: "checkmark.seal.fill")
+                    .font(.caption)
+                    .foregroundStyle(Color.brand)
+            }
+            if !facts.allergens.isEmpty {
+                Label("Allergènes : " + facts.allergens.joined(separator: ", "), systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// Avertissement rouge : produit rappelé.
+struct RecallBanner: View {
+    let recall: Recall
+    var productName: String? = nil
+
+    var body: some View {
+        NavigationLink {
+            RecallDetailView(recall: recall)
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.title2)
+                    .foregroundStyle(Color.red)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(productName.map { "Rappel : \($0)" } ?? "Ce produit fait l'objet d'un rappel")
+                        .font(.headline)
+                        .foregroundStyle(Color.red)
+                    if let reason = recall.reason {
+                        Text(reason).font(.caption).lineLimit(3)
+                    }
+                    Text("Vérifiez le lot sur l'emballage. Touchez pour les détails.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 4)
+        }
     }
 }
 
@@ -326,6 +479,9 @@ struct StoreRow: View {
                 }
                 if let address = store.address {
                     Text(address).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                if let hours = store.hours {
+                    OpenStatusLabel(hours: hours)
                 }
                 HStack(spacing: 6) {
                     if let entry = chainEntry {

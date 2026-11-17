@@ -11,6 +11,8 @@ enum StoreFinder {
         var stores: [Store]
         var source: String
         var countryCode: String?
+        /// La liste complète d'OpenStreetMap a été reçue (sinon : Open Prices / Plans seulement).
+        var fromOSM: Bool = true
     }
 
     /// Au-delà, on ne garde que les supérettes les plus proches (tous les supermarchés sont conservés).
@@ -72,33 +74,68 @@ enum StoreFinder {
         }
         let country = countryCounts.max { $0.value < $1.value }?.key
 
-        return Result(stores: kept, source: source, countryCode: country)
+        return Result(stores: kept, source: source, countryCode: country, fromOSM: osmResult != nil)
+    }
+
+    /// Complète une liste en cache avec les données fraîches d'Open Prices (nombre de prix, logos, nouveaux magasins).
+    static func merge(cached: [Store], fresh: [Store], center: CLLocation) -> [Store] {
+        var byID: [String: Store] = [:]
+        for store in cached { byID[store.id] = store }
+        for store in fresh where store.osmId != nil {
+            if var existing = byID[store.id] {
+                existing.priceCount = store.priceCount ?? existing.priceCount
+                existing.logoURL = store.logoURL ?? existing.logoURL
+                byID[store.id] = existing
+            } else {
+                byID[store.id] = store
+            }
+        }
+        return byID.values.sorted { $0.location.distance(from: center) < $1.location.distance(from: center) }
+    }
+
+    // MARK: Stations-service (noms)
+
+    /// Stations-service OpenStreetMap (nom, enseigne) pour nommer les stations du site prix-carburants.
+    static func fuelPlaces(lat: Double, lon: Double, radiusKm: Double) async -> [NamedPlace]? {
+        let around = "(around:\(Int(radiusKm * 1000)),\(String(format: "%.6f", lat)),\(String(format: "%.6f", lon)))"
+        let query = "[out:json][timeout:20];(node[\"amenity\"=\"fuel\"]\(around);way[\"amenity\"=\"fuel\"]\(around););out center tags;"
+        guard let response = await overpass(query: query, timeouts: [15, 8]) else { return nil }
+        return response.elements.compactMap { element -> NamedPlace? in
+            guard let la = element.lat ?? element.center?.lat, let lo = element.lon ?? element.center?.lon else { return nil }
+            let tags = element.tags ?? [:]
+            return NamedPlace(name: tags["name"]?.nilIfBlank, brand: tags["brand"]?.nilIfBlank, lat: la, lon: lo)
+        }
     }
 
     // MARK: OpenStreetMap
 
-    /// Serveur principal puis un miroir (délai court) ; ensuite on bascule sur Plans d'Apple.
-    private static let overpassEndpoints: [(url: String, timeout: TimeInterval)] = [
-        ("https://overpass-api.de/api/interpreter", 25),
-        ("https://overpass.kumi.systems/api/interpreter", 12),
+    /// Serveur principal puis un miroir ; ensuite on bascule sur le cache ou sur Plans d'Apple.
+    private static let overpassEndpoints = [
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
     ]
 
     private static func overpassStores(lat: Double, lon: Double, radiusMeters: Int) async -> [Store]? {
         let filter = "[\"shop\"~\"^(supermarket|convenience|hypermarket|wholesale|general)$\"]"
         let around = "(around:\(radiusMeters),\(String(format: "%.6f", lat)),\(String(format: "%.6f", lon)))"
         let query = "[out:json][timeout:25];(node\(filter)\(around);way\(filter)\(around););out center tags;"
-        let body = "data=" + (query.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "")
+        guard let response = await overpass(query: query, timeouts: [22, 12]) else { return nil }
+        return response.elements.compactMap(\.asStore)
+    }
 
-        for endpoint in overpassEndpoints {
-            guard let url = URL(string: endpoint.url) else { continue }
+    /// Envoie une requête Overpass au serveur principal, puis au miroir en cas d'échec.
+    private static func overpass(query: String, timeouts: [TimeInterval]) async -> OverpassResponse? {
+        let body = "data=" + (query.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "")
+        for (index, endpoint) in overpassEndpoints.enumerated() {
+            guard let url = URL(string: endpoint) else { continue }
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.httpBody = body.data(using: .utf8)
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-            request.timeoutInterval = endpoint.timeout
+            request.timeoutInterval = index < timeouts.count ? timeouts[index] : 10
             do {
                 let response: OverpassResponse = try await HTTP.send(request, snakeCase: false)
-                return response.elements.compactMap(\.asStore)
+                return response
             } catch {
                 if Task.isCancelled { return nil }
                 continue
@@ -172,7 +209,10 @@ struct OverpassResponse: Decodable {
                          lat: la,
                          lon: lo,
                          priceCount: nil,
-                         logoURL: nil)
+                         logoURL: nil,
+                         openingHours: t["opening_hours"]?.nilIfBlank,
+                         phone: (t["phone"] ?? t["contact:phone"])?.nilIfBlank,
+                         website: (t["website"] ?? t["contact:website"])?.nilIfBlank)
         }
     }
 

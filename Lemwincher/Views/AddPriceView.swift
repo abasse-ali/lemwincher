@@ -26,6 +26,8 @@ struct AddPriceView: View {
     @State private var shareError: String? = nil
     @State private var continueAfterError = false
     @State private var savedCount = 0
+    @State private var reading = false
+    @State private var readMessage: String? = nil
 
     init(product: Product? = nil, store: Store? = nil) {
         fixedStore = store
@@ -40,14 +42,7 @@ struct AddPriceView: View {
     // MARK: Données dérivées
 
     private var storeChoices: [Store] {
-        var list = model.knownStores
-        if let fixedStore, !list.contains(where: { $0.id == fixedStore.id }) {
-            list.insert(fixedStore, at: 0)
-        }
-        let reference = model.locationManager.location ?? model.referenceLocation
-        return list.sorted {
-            ($0.distance(from: reference) ?? .infinity) < ($1.distance(from: reference) ?? .infinity)
-        }
+        model.storesByDistance(including: fixedStore)
     }
 
     private var selectedStore: Store? {
@@ -131,15 +126,41 @@ struct AddPriceView: View {
                     }
                 }
 
-                Section("Prix") {
+                Section {
                     HStack {
                         TextField("0,00", text: $priceText)
                             .keyboardType(.decimalPad)
                             .font(.title2.monospacedDigit())
                         Text(model.settings.currency).foregroundStyle(.secondary)
                     }
+                    Button {
+                        showCamera = true
+                    } label: {
+                        HStack {
+                            Label(photo == nil ? "Lire le prix sur l'étiquette" : "Reprendre la photo de l'étiquette",
+                                  systemImage: "camera.viewfinder")
+                            Spacer()
+                            if reading {
+                                ProgressView()
+                            } else if let photo {
+                                Image(uiImage: photo)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 36, height: 36)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                            }
+                        }
+                    }
                     Toggle("Prix en promotion", isOn: $isDiscounted)
                     DatePicker("Date du relevé", selection: $date, in: ...Date(), displayedComponents: .date)
+                } header: {
+                    Text("Prix")
+                } footer: {
+                    if let readMessage {
+                        Text(readMessage)
+                    } else {
+                        Text("Photographiez l'étiquette : le prix (et le code-barres s'il y figure) est lu automatiquement, sur l'iPhone.")
+                    }
                 }
 
                 shareSection
@@ -189,8 +210,11 @@ struct AddPriceView: View {
             }
             .fullScreenCover(isPresented: $showCamera) {
                 CameraPicker { image in
-                    if let image { photo = image }
                     showCamera = false
+                    if let image {
+                        photo = image
+                        Task { await readTag(image) }
+                    }
                 }
                 .ignoresSafeArea()
             }
@@ -284,6 +308,30 @@ struct AddPriceView: View {
         if brand.trimmed.isEmpty { brand = found.brand ?? "" }
     }
 
+    /// Lit le prix (et le code-barres) sur la photo de l'étiquette.
+    @MainActor
+    private func readTag(_ image: UIImage) async {
+        reading = true
+        async let textTask = TextRecognizer.recognize(image)
+        async let codesTask = TextRecognizer.barcodes(image)
+        let pieces = await textTask
+        let codes = await codesTask
+        reading = false
+
+        var found: [String] = []
+        if let price = PriceTagParser.bestPrice(in: pieces) {
+            priceText = String(format: "%.2f", price).replacingOccurrences(of: ".", with: ",")
+            found.append("prix \(Fmt.price(price, model.settings.currency))")
+        }
+        if barcode.trimmed.isEmpty, let code = codes.first ?? PriceTagParser.barcode(in: pieces) {
+            barcode = code
+            found.append("code-barres")
+        }
+        readMessage = found.isEmpty
+            ? "Prix non reconnu sur la photo : tapez-le. La photo servira de preuve si vous partagez le prix."
+            : "Lu sur l'étiquette : " + found.joined(separator: " et ") + ". Vérifiez avant d'enregistrer."
+    }
+
     private func makeProduct() -> Product {
         let productName = name.trimmed
         let code = barcode.trimmed
@@ -347,6 +395,7 @@ struct AddPriceView: View {
         priceText = ""
         isDiscounted = false
         photo = nil
+        readMessage = nil
         showScanner = true
     }
 }

@@ -11,7 +11,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.0.0"
+    MARKETING_VERSION: "1.1.0"
     CURRENT_PROJECT_VERSION: "1"
 
 targets:
@@ -27,23 +27,61 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # Clés générées automatiquement + Config/Lemwincher-Info.plist (tâche d'arrière-plan).
         GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_FILE: Config/Lemwincher-Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: Lemwincher
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.shopping
-        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Lemwincher utilise votre position pour trouver les supermarchés autour de vous et comparer leurs prix."
-        INFOPLIST_KEY_NSCameraUsageDescription: "La caméra sert à scanner le code-barres des produits pour comparer leurs prix."
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Lemwincher utilise votre position pour trouver les supermarchés et les stations-service autour de vous et comparer leurs prix."
+        INFOPLIST_KEY_NSCameraUsageDescription: "La caméra sert à scanner les codes-barres, à lire les étiquettes de prix et les tickets de caisse."
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
         INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
         ENABLE_PREVIEWS: "YES"
         CODE_SIGN_STYLE: Automatic
 
+  # Tests unitaires (logique de calcul, analyse des données, formats).
+  LemwincherTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: LemwincherTests
+    dependencies:
+      - target: Lemwincher
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: "YES"
+        PRODUCT_BUNDLE_IDENTIFIER: com.lemwincher.app.tests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Lemwincher.app/Lemwincher"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+  # Tests d'interface : parcours de l'app sur simulateur, avec captures d'écran.
+  LemwincherUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: LemwincherUITests
+    dependencies:
+      - target: Lemwincher
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: "YES"
+        PRODUCT_BUNDLE_IDENTIFIER: com.lemwincher.app.uitests
+        TEST_TARGET_NAME: Lemwincher
+
 schemes:
   Lemwincher:
     build:
       targets:
         Lemwincher: all
+        LemwincherTests: [test]
+        LemwincherUITests: [test]
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - LemwincherTests
+        - LemwincherUITests
     archive:
       config: Release

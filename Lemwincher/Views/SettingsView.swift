@@ -1,7 +1,8 @@
 import SwiftUI
 import MapKit
+import UniformTypeIdentifiers
 
-/// Onglet "Réglages" : rayon, domicile, magasins favoris, compte Open Prices, devise, sources.
+/// Onglet "Réglages" : rayon, domicile, magasins favoris, compte Open Prices, devise, sauvegarde, sources.
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
 
@@ -11,6 +12,8 @@ struct SettingsView: View {
     @State private var confirmReset = false
     @State private var username = ""
     @State private var password = ""
+    @State private var showImporter = false
+    @State private var importMessage: String? = nil
 
     private var appVersion: String {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -51,11 +54,18 @@ struct SettingsView: View {
                             Text(code).tag(code)
                         }
                     }
+                    Picker("Mon carburant", selection: $bindable.state.settings.fuelType) {
+                        ForEach(FuelType.allCases) { fuel in
+                            Text(fuel.label).tag(fuel)
+                        }
+                    }
                 } header: {
-                    Text("Devise")
+                    Text("Préférences")
                 } footer: {
-                    Text("Utilisée pour vos relevés, les estimations et le total du panier.")
+                    Text("La devise sert à vos relevés, aux estimations et au total du panier. Le carburant est celui affiché dans « Autour de moi ».")
                 }
+
+                backupSection
 
                 Section {
                     Link(destination: URL(string: "https://prices.openfoodfacts.org")!) {
@@ -64,21 +74,46 @@ struct SettingsView: View {
                     Link(destination: URL(string: "https://www.openstreetmap.org/copyright")!) {
                         Label("© contributeurs OpenStreetMap", systemImage: "map")
                     }
+                    Link(destination: URL(string: "https://www.prix-carburants.gouv.fr")!) {
+                        Label("Prix des carburants (gouvernement)", systemImage: "fuelpump")
+                    }
+                    Link(destination: URL(string: "https://rappel.conso.gouv.fr")!) {
+                        Label("RappelConso (gouvernement)", systemImage: "exclamationmark.shield")
+                    }
+                    Link(destination: URL(string: "https://world.openfoodfacts.org")!) {
+                        Label("Open Food Facts – Nutri-Score", systemImage: "leaf")
+                    }
                 } header: {
                     Text("Sources des données")
                 } footer: {
-                    Text("Les prix de la communauté viennent d'Open Prices (Open Food Facts, licence ODbL), les magasins d'OpenStreetMap. Lemwincher n'est affilié à aucune enseigne.")
+                    Text("Prix de la communauté : Open Prices (Open Food Facts, licence ODbL). Magasins et horaires : OpenStreetMap. Carburants et rappels : data.economie.gouv.fr (Licence Ouverte). Lemwincher n'est affilié à aucune enseigne.")
                 }
 
                 Section {
+                    Button {
+                        model.state.settings.hasSeenOnboarding = false
+                    } label: {
+                        Label("Revoir la présentation", systemImage: "sparkles")
+                    }
                     Button("Effacer toutes mes données", role: .destructive) {
                         confirmReset = true
                     }
                 } footer: {
-                    Text("Lemwincher \(appVersion) · vos données restent sur votre iPhone.")
+                    Text("Lemwincher \(appVersion) · vos données restent sur votre iPhone. Astuce Siri : « Ajoute à ma liste Lemwincher ».")
                 }
             }
             .navigationTitle("Réglages")
+            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
+                importBackup(result)
+            }
+            .alert("Restauration", isPresented: Binding(
+                get: { importMessage != nil },
+                set: { if !$0 { importMessage = nil } }
+            )) {
+                Button("OK") { importMessage = nil }
+            } message: {
+                Text(importMessage ?? "")
+            }
             .confirmationDialog("Effacer vos relevés de prix, votre liste, vos magasins et vos réglages ?",
                                 isPresented: $confirmReset,
                                 titleVisibility: .visible) {
@@ -211,6 +246,47 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: Sauvegarde
+
+    private var backupSection: some View {
+        Section {
+            if let data = model.exportBackup() {
+                ShareLink(item: BackupExport(data: data),
+                          preview: SharePreview("Sauvegarde Lemwincher")) {
+                    Label("Exporter une sauvegarde", systemImage: "square.and.arrow.up")
+                }
+            }
+            Button {
+                showImporter = true
+            } label: {
+                Label("Restaurer une sauvegarde", systemImage: "square.and.arrow.down")
+            }
+        } header: {
+            Text("Sauvegarde")
+        } footer: {
+            Text("Gardez une copie de vos relevés, de votre liste et de vos magasins (dans Fichiers, iCloud Drive, par e-mail…). La restauration ajoute les données sans rien effacer.")
+        }
+    }
+
+    private func importBackup(_ result: Result<URL, Error>) {
+        switch result {
+        case .failure(let error):
+            importMessage = "Import impossible : \(error.localizedDescription)"
+        case .success(let url):
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if accessing { url.stopAccessingSecurityScopedResource() }
+            }
+            do {
+                let data = try Data(contentsOf: url)
+                let summary = try model.importBackup(data)
+                importMessage = summary.text
+            } catch {
+                importMessage = "Ce fichier n'est pas une sauvegarde Lemwincher valide."
+            }
+        }
+    }
+
     // MARK: Actions
 
     private func setHomeToCurrentLocation() {
@@ -250,5 +326,17 @@ struct SettingsView: View {
         } catch {
             geocodeError = "Adresse introuvable."
         }
+    }
+}
+
+/// Fichier de sauvegarde partagé (Fichiers, iCloud Drive, AirDrop, e-mail…).
+struct BackupExport: Transferable {
+    let data: Data
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .json) { export in
+            export.data
+        }
+        .suggestedFileName("lemwincher-sauvegarde.json")
     }
 }

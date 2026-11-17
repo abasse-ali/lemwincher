@@ -42,10 +42,86 @@ struct SearchView: View {
                 }
             }
             .task(id: query) { await search() }
-            .task(id: model.locationKey) { await loadRecent() }
-            .refreshable { await loadRecent() }
+            .task(id: model.locationKey) {
+                await loadRecent()
+                await refreshWatchlistIfNeeded()
+                await model.refreshRecalls()
+                await model.checkRecalls(for: model.state.recentProducts.map(\.code) + model.state.watchlist.map(\.id))
+            }
+            .refreshable {
+                await loadRecent()
+                await model.checkWatchlist(notify: false)
+            }
             .appDestinations()
         }
+    }
+
+    /// Vérifie les prix suivis au plus une fois toutes les 3 heures quand l'app est ouverte.
+    private func refreshWatchlistIfNeeded() async {
+        if let last = model.watchlistLastChecked, Date().timeIntervalSince(last) < 3 * 3600 { return }
+        await model.checkWatchlist(notify: false)
+    }
+
+    // MARK: Produits suivis
+
+    @ViewBuilder
+    private var watchlistSection: some View {
+        if !model.state.watchlist.isEmpty {
+            Section {
+                ForEach(model.state.watchlist) { item in
+                    NavigationLink(value: item.product) {
+                        WatchRow(item: item, currency: model.settings.currency)
+                    }
+                }
+                .onDelete { offsets in
+                    model.state.watchlist.remove(atOffsets: offsets)
+                }
+            } header: {
+                HStack {
+                    Text("Prix suivis")
+                    Spacer()
+                    if model.watchChecking {
+                        ProgressView().controlSize(.small)
+                    }
+                }
+            } footer: {
+                Text("Meilleur prix relevé autour de vous ces 60 derniers jours. Vous recevez une notification en cas de baisse.")
+            }
+        }
+    }
+
+    /// Lien vers les rappels de produits du département.
+    private var recallsSection: some View {
+        let mine = (model.state.shoppingList.map(\.product.code) + model.state.recentProducts.map(\.code) + model.state.watchlist.map(\.id))
+            .filter { model.recall(for: $0) != nil }
+        let count = model.localRecalls.count
+        return Section {
+            NavigationLink {
+                RecallsView()
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.shield.fill")
+                        .font(.title3)
+                        .foregroundStyle(Color.white)
+                        .frame(width: 40, height: 40)
+                        .background(mine.isEmpty ? Color.red.opacity(0.8) : Color.red, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Rappels de produits").font(.headline)
+                        Text(recallsSubtitle(count: count, mine: Set(mine).count))
+                            .font(.caption)
+                            .foregroundStyle(mine.isEmpty ? Color.secondary : Color.red)
+                    }
+                }
+            }
+            .accessibilityIdentifier("recallsLink")
+        }
+    }
+
+    private func recallsSubtitle(count: Int, mine: Int) -> String {
+        if mine > 0 { return "\(mine) de vos produits concerné\(mine > 1 ? "s" : "") !" }
+        if model.recallsLoading && count == 0 { return "Chargement…" }
+        let place = model.departmentName.map { " (\($0) et France entière)" } ?? ""
+        return "\(count) rappel\(count > 1 ? "s" : "") alimentaire\(count > 1 ? "s" : "") ces 30 jours\(place)"
     }
 
     // MARK: Contenu
@@ -63,12 +139,18 @@ struct SearchView: View {
             Text("Scannez ou cherchez un produit pour voir son prix dans chaque magasin autour de vous, du moins cher au plus cher.")
         }
 
+        watchlistSection
+
+        recallsSection
+
         if !model.state.recentProducts.isEmpty {
             Section("Consultés récemment") {
                 ForEach(model.state.recentProducts) { product in
                     NavigationLink(value: product) {
-                        ProductRow(product: product)
+                        ProductRow(product: product,
+                                   subtitle: model.recall(for: product.code) != nil ? "⚠️ Produit rappelé" : nil)
                     }
+                    .accessibilityIdentifier("recentProduct")
                 }
             }
         }
@@ -200,6 +282,47 @@ struct SearchView: View {
                 .prefix(30))
         } catch {
             // On garde l'affichage précédent en cas d'erreur réseau.
+        }
+    }
+}
+
+/// Un produit suivi : meilleur prix actuel autour de soi, baisse éventuelle, prix cible.
+struct WatchRow: View {
+    let item: WatchItem
+    let currency: String
+
+    private var subtitle: String {
+        guard let store = item.bestStoreName else { return "Pas encore de prix relevé autour de vous" }
+        return Fmt.join(store, item.bestDate.map { Fmt.day($0) })
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ProductThumb(url: item.product.imageURL, size: 44)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.product.name).lineLimit(2)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 2) {
+                if let best = item.bestPrice {
+                    Text(Fmt.price(best, currency)).font(.headline.monospacedDigit())
+                } else {
+                    Text("—").foregroundStyle(.secondary)
+                }
+                if item.hasNewDrop, let best = item.bestPrice, let previous = item.previousBestPrice {
+                    Label(Fmt.price(best - previous, currency), systemImage: "arrow.down")
+                        .font(.caption2.bold())
+                        .foregroundStyle(Color.brand)
+                } else if let target = item.targetPrice {
+                    Text("cible \(Fmt.price(target, currency))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
 }

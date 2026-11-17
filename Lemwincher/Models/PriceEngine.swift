@@ -145,9 +145,44 @@ struct CheaperAlternative: Identifiable, Hashable {
     var id: String { obs.productCode }
 }
 
+// MARK: - Évolution de mes prix
+
+/// Évolution du prix d'un produit dans un même magasin, d'après mes relevés.
+struct PriceChange: Identifiable, Hashable {
+    let product: Product
+    let storeName: String
+    let first: Double
+    let last: Double
+    let firstDate: Date
+    let lastDate: Date
+    let currency: String
+
+    var id: String { product.code + "|" + storeName }
+    var delta: Double { last - first }
+    var percent: Double { first > 0 ? (last - first) / first * 100 : 0 }
+}
+
 // MARK: - Calculs
 
 enum PriceEngine {
+    /// Produits relevés au moins deux fois (jours différents) dans le même magasin,
+    /// des plus fortes variations aux plus faibles. Les prix promo sont ignorés.
+    static func priceChanges(_ prices: [MyPrice]) -> [PriceChange] {
+        let calendar = Calendar.current
+        let groups = Dictionary(grouping: prices.filter { !$0.isDiscounted }) { p in
+            p.product.code + "|" + p.store.id + "|" + p.currency
+        }
+        let changes: [PriceChange] = groups.values.compactMap { list in
+            let sorted = list.sorted { $0.date < $1.date }
+            guard let first = sorted.first, let last = sorted.last,
+                  !calendar.isDate(first.date, inSameDayAs: last.date) else { return nil }
+            return PriceChange(product: last.product, storeName: last.store.name,
+                               first: first.price, last: last.price,
+                               firstDate: first.date, lastDate: last.date, currency: last.currency)
+        }
+        return changes.sorted { abs($0.percent) > abs($1.percent) }
+    }
+
     static func observations(from prices: [OPPrice]) -> [PriceObservation] {
         prices.compactMap { p -> PriceObservation? in
             guard let code = p.productCode?.nilIfBlank ?? p.product?.code.nilIfBlank else { return nil }

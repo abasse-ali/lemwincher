@@ -67,6 +67,16 @@ struct StoreDetailView: View {
                         Label("Itinéraire avec Plans", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
                     }
                 }
+                if let phone = store.phoneURL {
+                    Link(destination: phone) {
+                        Label("Appeler le magasin", systemImage: "phone.fill")
+                    }
+                }
+                if let website = store.websiteURL {
+                    Link(destination: website) {
+                        Label("Site du magasin", systemImage: "safari")
+                    }
+                }
                 Button {
                     model.toggleFavorite(store)
                 } label: {
@@ -79,6 +89,8 @@ struct StoreDetailView: View {
                     Label("Relever un prix dans ce magasin", systemImage: "plus.circle.fill")
                 }
             }
+
+            hoursSection
 
             Section {
                 if loading && observations.isEmpty {
@@ -123,6 +135,36 @@ struct StoreDetailView: View {
         }
         .task { await load() }
         .refreshable { await load() }
+    }
+
+    /// Horaires de la semaine (aujourd'hui en gras).
+    @ViewBuilder
+    private var hoursSection: some View {
+        if let hours = store.hours {
+            let today = OpeningHours.weekdayIndex(of: Date(), calendar: .current)
+            Section {
+                OpenStatusLabel(hours: hours)
+                    .font(.subheadline)
+                ForEach(0..<7, id: \.self) { day in
+                    HStack {
+                        Text(OpeningHours.dayLabels[day])
+                        Spacer()
+                        Text(hours.description(forDay: day))
+                            .monospacedDigit()
+                            .foregroundStyle(day == today ? Color.primary : Color.secondary)
+                    }
+                    .fontWeight(day == today ? .semibold : .regular)
+                }
+            } header: {
+                Text("Horaires")
+            } footer: {
+                Text("Horaires OpenStreetMap, à vérifier les jours fériés.")
+            }
+        } else if let raw = store.openingHours {
+            Section("Horaires") {
+                Text(raw).font(.callout)
+            }
+        }
     }
 
     private func load() async {

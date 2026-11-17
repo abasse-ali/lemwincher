@@ -16,6 +16,10 @@ struct ProductCompareView: View {
     @State private var showOtherChains = false
     @State private var alternatives: [CheaperAlternative]? = nil
     @State private var alternativesLoading = false
+    @State private var facts: ProductFacts? = nil
+    @State private var didLoadFacts = false
+    @State private var showTargetAlert = false
+    @State private var targetText = ""
 
     init(product: Product) {
         _product = State(initialValue: product)
@@ -61,10 +65,21 @@ struct ProductCompareView: View {
         let otherEstimates = estimates.filter { nearby[$0.key] == nil }
 
         List {
+            if let recall = model.recall(for: product.code) {
+                Section {
+                    RecallBanner(recall: recall)
+                }
+            }
+
             Section {
                 productHeader
+                if let facts {
+                    ProductFactsView(facts: facts)
+                }
                 actionButtons
             }
+
+            watchSection(best: rows.first)
 
             if rows.count >= 2, let cheapest = rows.first, let dearest = rows.last, dearest.price > cheapest.price {
                 Section {
@@ -100,11 +115,76 @@ struct ProductCompareView: View {
         }
         .navigationTitle("Comparatif")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                ShareLink(item: shareText(rows: rows, estimates: nearbyEstimates)) {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                Button {
+                    model.toggleWatch(product, currentBest: rows.first)
+                } label: {
+                    Image(systemName: model.isWatched(product) ? "bell.fill" : "bell")
+                }
+                .accessibilityLabel(model.isWatched(product) ? "Ne plus suivre le prix" : "Suivre le prix")
+            }
+        }
         .sheet(isPresented: $showAddPrice) {
             AddPriceView(product: product)
         }
+        .alert("Prix cible", isPresented: $showTargetAlert) {
+            TextField("Ex. : 3,50", text: $targetText)
+                .keyboardType(.decimalPad)
+            Button("Enregistrer") {
+                let value = Double(targetText.replacingOccurrences(of: ",", with: ".").trimmed)
+                model.setTargetPrice(value.flatMap { $0 > 0 ? $0 : nil }, for: product.code)
+            }
+            Button("Annuler", role: .cancel) {}
+        } message: {
+            Text("Vous serez prévenu quand ce produit sera relevé à ce prix ou moins autour de vous.")
+        }
         .task(id: model.locationKey) { await load() }
         .refreshable { await load() }
+        .onAppear { model.markWatchSeen(product.code) }
+    }
+
+    // MARK: Suivi du prix
+
+    @ViewBuilder
+    private func watchSection(best: PriceObservation?) -> some View {
+        if let item = model.state.watchlist.first(where: { $0.id == product.code }) {
+            Section {
+                HStack {
+                    Label("Prix suivi", systemImage: "bell.fill").foregroundStyle(Color.brand)
+                    Spacer()
+                    Button(item.targetPrice.map { "Cible : \(Fmt.price($0, model.settings.currency))" } ?? "Fixer un prix cible") {
+                        targetText = item.targetPrice.map { String(format: "%.2f", $0).replacingOccurrences(of: ".", with: ",") } ?? ""
+                        showTargetAlert = true
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            } footer: {
+                Text("Lemwincher vérifie régulièrement les nouveaux prix relevés autour de vous et vous prévient par une notification en cas de baisse.")
+            }
+        }
+    }
+
+    /// Texte partagé : les prix du produit autour de soi.
+    private func shareText(rows: [PriceObservation], estimates: [ChainEstimate]) -> String {
+        var lines = [Fmt.join(product.name, product.brand, product.quantity)]
+        if rows.isEmpty && estimates.isEmpty {
+            lines.append("Pas encore de prix relevé près de chez moi.")
+        }
+        for obs in rows.prefix(6) {
+            lines.append("• \(Fmt.price(obs.price, obs.currency)) chez \(obs.storeName) (\(Fmt.day(obs.date)))")
+        }
+        if rows.isEmpty {
+            for estimate in estimates.prefix(5) {
+                lines.append("• ≈ \(Fmt.price(estimate.median, estimate.currency)) chez \(estimate.name) (prix médian en France)")
+            }
+        }
+        lines.append("Comparé avec Lemwincher")
+        return lines.joined(separator: "\n")
     }
 
     // MARK: Sections
@@ -333,18 +413,31 @@ struct ProductCompareView: View {
         let lat = model.referenceLocation?.coordinate.latitude
         let lon = model.referenceLocation?.coordinate.longitude
         let radius = model.settings.radiusKm
+        let needFacts = !didLoadFacts
         async let localTask = ProductCompareView.fetchLocal(code: code, lat: lat, lon: lon, radiusKm: radius)
         async let nationalTask = ProductCompareView.fetchNational(code: code)
+        async let factsTask = ProductCompareView.fetchFacts(code: code, needed: needFacts)
         let localPrices = await localTask
         let nationalPrices = await nationalTask
+        let loadedFacts = await factsTask
         if Task.isCancelled { return }
 
         if let localPrices { local = PriceEngine.observations(from: localPrices) }
         if let nationalPrices { national = PriceEngine.observations(from: nationalPrices) }
+        if needFacts {
+            facts = loadedFacts
+            didLoadFacts = true
+        }
         if localPrices == nil && nationalPrices == nil {
             loadError = "Prix de la communauté indisponibles. Vérifiez votre connexion internet."
         }
         loading = false
+        await model.checkRecalls(for: [code])
+    }
+
+    private static func fetchFacts(code: String, needed: Bool) async -> ProductFacts? {
+        guard needed else { return nil }
+        return try? await OpenFoodFactsAPI.facts(code: code)
     }
 
     private static func fetchLocal(code: String, lat: Double?, lon: Double?, radiusKm: Double) async -> [OPPrice]? {

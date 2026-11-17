@@ -15,7 +15,8 @@ struct StoresView: View {
                 } else {
                     VStack(spacing: 0) {
                         map
-                        storeList(supermarketsOnly: $bindable.state.settings.supermarketsOnly)
+                        storeList(supermarketsOnly: $bindable.state.settings.supermarketsOnly,
+                                  openNowOnly: $bindable.state.settings.openNowOnly)
                     }
                 }
             }
@@ -37,6 +38,7 @@ struct StoresView: View {
         .task(id: model.locationKey) {
             await model.refreshStores()
             camera = .automatic
+            await model.refreshFuel()
             await model.refreshChainIndex()
         }
     }
@@ -66,7 +68,7 @@ struct StoresView: View {
 
     // MARK: Liste
 
-    private func storeList(supermarketsOnly: Binding<Bool>) -> some View {
+    private func storeList(supermarketsOnly: Binding<Bool>, openNowOnly: Binding<Bool>) -> some View {
         let reference = model.referenceLocation
         let favorites = model.settings.favoriteStores.sorted {
             ($0.distance(from: reference) ?? .infinity) < ($1.distance(from: reference) ?? .infinity)
@@ -88,9 +90,14 @@ struct StoresView: View {
                 }
             }
 
+            fuelSection
+
             chainSummarySection
 
             Section {
+                Toggle(isOn: openNowOnly) {
+                    Label("Ouverts maintenant", systemImage: "clock")
+                }
                 if model.storesLoading && model.stores.isEmpty {
                     HStack(spacing: 10) {
                         ProgressView()
@@ -107,6 +114,7 @@ struct StoresView: View {
                                  chainEntry: report?.entry(for: store.chainKey),
                                  favorite: model.isFavorite(store))
                     }
+                    .accessibilityIdentifier("storeRow")
                 }
             } header: {
                 VStack(alignment: .leading, spacing: 8) {
@@ -122,12 +130,33 @@ struct StoresView: View {
                 }
             } footer: {
                 if let source = model.storesSource {
-                    Text("Sources : \(source). Sur la carte : en vert les magasins avec des prix relevés, en jaune vos favoris.")
+                    Text("Sources : \(source). Sur la carte : en vert les magasins avec des prix relevés, en jaune vos favoris. Horaires : OpenStreetMap (quand ils sont connus).")
                 }
             }
         }
         .listStyle(.insetGrouped)
-        .refreshable { await model.refreshStores() }
+        .refreshable {
+            await model.refreshStores()
+            await model.refreshFuel(force: true)
+        }
+    }
+
+    /// Station-service la moins chère autour de soi.
+    private var fuelSection: some View {
+        let fuel = model.settings.fuelType
+        let best = FuelStats.ranked(model.fuelStations, fuel: fuel).first
+        let reference = model.referenceLocation
+        return Section {
+            NavigationLink {
+                FuelView()
+            } label: {
+                FuelSummaryRow(fuel: fuel,
+                               best: best,
+                               distance: best.flatMap { station in reference.map { station.location.distance(from: $0) } },
+                               loading: model.fuelLoading)
+            }
+            .accessibilityIdentifier("fuelLink")
+        }
     }
 
     /// Les enseignes présentes autour de vous, de la moins chère à la plus chère.
@@ -152,6 +181,7 @@ struct StoresView: View {
                     } label: {
                         Label("Classement complet des enseignes", systemImage: "list.number")
                     }
+                    .accessibilityIdentifier("chainRankingLink")
                 } header: {
                     Text("Enseignes les moins chères autour de vous")
                 } footer: {

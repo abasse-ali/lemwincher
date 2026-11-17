@@ -11,6 +11,7 @@ struct ShoppingListView: View {
     @State private var loading = false
     @State private var showCustomAlert = false
     @State private var customName = ""
+    @State private var quickAdd = ""
 
     /// Change quand la liste de produits ou la zone change : relance la comparaison.
     private var listKey: String {
@@ -78,11 +79,13 @@ struct ShoppingListView: View {
         @Bindable var bindable = model
         NavigationStack {
             List {
+                quickAddSection
+                recallSection
                 if model.state.shoppingList.isEmpty {
                     ContentUnavailableView {
                         Label("Votre liste est vide", systemImage: "cart")
                     } description: {
-                        Text("Ajoutez des produits depuis l'onglet Comparer (bouton « Ajouter à ma liste »), ou un produit sans code-barres avec le menu ⋯. Lemwincher vous dira où faire vos courses pour payer le moins cher.")
+                        Text("Tapez un produit ci-dessus, ou ajoutez-le depuis l'onglet Comparer (bouton « Ajouter à ma liste »). Lemwincher vous dira où faire vos courses pour payer le moins cher.")
                     } actions: {
                         Button("Produit sans code-barres") { showCustomAlert = true }
                             .buttonStyle(.bordered)
@@ -145,9 +148,93 @@ struct ShoppingListView: View {
             } message: {
                 Text("Fruits, légumes, vrac… Utilisez le même nom quand vous relevez son prix dans « Mes prix ».")
             }
-            .task(id: listKey) { await loadPrices() }
+            .task(id: listKey) {
+                await model.checkRecalls(for: model.state.shoppingList.map(\.product.code))
+                await loadPrices()
+            }
             .refreshable { await loadPrices() }
             .appDestinations()
+        }
+    }
+
+    // MARK: Ajout rapide
+
+    private var quickAddSection: some View {
+        Section {
+            HStack(spacing: 10) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(Color.brand)
+                TextField("Ajouter un produit (ex. : lait, 3017620422003…)", text: $quickAdd)
+                    .submitLabel(.done)
+                    .onSubmit(addQuickItem)
+                    .accessibilityIdentifier("quickAddField")
+            }
+            ForEach(quickSuggestions) { product in
+                Button {
+                    quickAdd = ""
+                    model.addToList(product)
+                } label: {
+                    ProductRow(product: product, subtitle: "Déjà consulté : touchez pour l'ajouter")
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    /// Produits déjà consultés ou relevés dont le nom correspond à la saisie.
+    private var quickSuggestions: [Product] {
+        let q = quickAdd.trimmed
+        guard q.count >= 2 else { return [] }
+        var seen = Set<String>()
+        var found: [Product] = []
+        for product in model.state.recentProducts + model.state.myPrices.map(\.product)
+        where !seen.contains(product.code) && !model.isInList(product) && product.name.localizedCaseInsensitiveContains(q) {
+            seen.insert(product.code)
+            found.append(product)
+        }
+        return Array(found.prefix(3))
+    }
+
+    private func addQuickItem() {
+        let text = quickAdd.trimmed
+        quickAdd = ""
+        guard !text.isEmpty else { return }
+        guard text.isBarcodeLike else {
+            model.addToList(.custom(named: text))
+            return
+        }
+        model.addToList(Product(code: text, name: text))
+        // Nom, marque et photo du produit à partir du code-barres.
+        Task {
+            if let found = await ProductLookup.lookup(code: text) {
+                model.updateListProduct(found)
+            }
+        }
+    }
+
+    // MARK: Rappels
+
+    private struct RecalledItem: Identifiable {
+        let item: ShoppingItem
+        let recall: Recall
+        var id: UUID { item.id }
+    }
+
+    @ViewBuilder
+    private var recallSection: some View {
+        let recalled = model.state.shoppingList.compactMap { item -> RecalledItem? in
+            guard let recall = model.recall(for: item.product.code) else { return nil }
+            return RecalledItem(item: item, recall: recall)
+        }
+        if !recalled.isEmpty {
+            Section {
+                ForEach(recalled) { entry in
+                    RecallBanner(recall: entry.recall, productName: entry.item.product.name)
+                }
+            } header: {
+                Text("Attention : produit rappelé")
+            }
         }
     }
 

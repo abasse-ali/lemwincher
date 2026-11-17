@@ -459,6 +459,97 @@ enum OpenFoodFactsAPI {
     }
 }
 
+/// Informations nutritionnelles et environnementales d'un produit (Open Food Facts).
+struct ProductFacts: Hashable {
+    /// "a" … "e"
+    let nutriScore: String?
+    /// 1 … 4
+    let nova: Int?
+    /// "a" … "e"
+    let ecoScore: String?
+    let allergens: [String]
+    let labels: [String]
+
+    var isEmpty: Bool {
+        nutriScore == nil && nova == nil && ecoScore == nil && allergens.isEmpty && labels.isEmpty
+    }
+
+    private static let allergenNames: [String: String] = [
+        "en:milk": "lait", "en:gluten": "gluten", "en:eggs": "œufs", "en:nuts": "fruits à coque",
+        "en:peanuts": "arachides", "en:soybeans": "soja", "en:fish": "poisson", "en:crustaceans": "crustacés",
+        "en:molluscs": "mollusques", "en:celery": "céleri", "en:mustard": "moutarde", "en:sesame-seeds": "sésame",
+        "en:sulphur-dioxide-and-sulphites": "sulfites", "en:lupin": "lupin",
+    ]
+
+    private static let labelNames: [String: String] = [
+        "en:organic": "Bio", "fr:ab-agriculture-biologique": "AB", "en:eu-organic": "Bio européen",
+        "en:vegan": "Vegan", "en:vegetarian": "Végétarien", "en:no-gluten": "Sans gluten",
+        "en:fair-trade": "Commerce équitable", "en:made-in-france": "Fabriqué en France",
+        "fr:fabrique-en-france": "Fabriqué en France", "en:french-meat": "Viande française",
+        "fr:label-rouge": "Label Rouge", "en:no-palm-oil": "Sans huile de palme", "en:palm-oil-free": "Sans huile de palme",
+        "en:pdo": "AOP", "en:pgi": "IGP", "fr:bleu-blanc-coeur": "Bleu-Blanc-Cœur",
+    ]
+
+    init(nutriScore: String?, nova: Int?, ecoScore: String?, allergenTags: [String], labelTags: [String]) {
+        let grades = Set(["a", "b", "c", "d", "e"])
+        let nutri = nutriScore?.lowercased()
+        let eco = ecoScore?.lowercased()
+        self.nutriScore = nutri.flatMap { grades.contains($0) ? $0 : nil }
+        self.ecoScore = eco.flatMap { grades.contains($0) ? $0 : nil }
+        self.nova = nova.flatMap { (1...4).contains($0) ? $0 : nil }
+        var seenAllergens = Set<String>()
+        allergens = allergenTags.compactMap { ProductFacts.allergenNames[$0] }.filter { seenAllergens.insert($0).inserted }
+        var seenLabels = Set<String>()
+        labels = labelTags.compactMap { ProductFacts.labelNames[$0] }.filter { seenLabels.insert($0).inserted }
+    }
+}
+
+extension OpenFoodFactsAPI {
+    private struct FactsResponse: Decodable {
+        let product: FactsProduct?
+    }
+
+    private struct FactsProduct: Decodable {
+        let nutriscoreGrade: String?
+        let novaGroup: Int?
+        let ecoscoreGrade: String?
+        let environmentalScoreGrade: String?
+        let allergensTags: [String]?
+        let labelsTags: [String]?
+
+        private enum CodingKeys: String, CodingKey {
+            case nutriscoreGrade, novaGroup, ecoscoreGrade, environmentalScoreGrade, allergensTags, labelsTags
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            nutriscoreGrade = c.lossyString(.nutriscoreGrade)
+            novaGroup = c.lossyInt(.novaGroup)
+            ecoscoreGrade = c.lossyString(.ecoscoreGrade)
+            environmentalScoreGrade = c.lossyString(.environmentalScoreGrade)
+            allergensTags = try? c.decodeIfPresent([String].self, forKey: .allergensTags)
+            labelsTags = try? c.decodeIfPresent([String].self, forKey: .labelsTags)
+        }
+    }
+
+    /// Nutri-Score, groupe NOVA, Éco-Score, allergènes et labels.
+    static func facts(code: String) async throws -> ProductFacts? {
+        let safe = code.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? code
+        let fields = "nutriscore_grade,nova_group,ecoscore_grade,environmental_score_grade,allergens_tags,labels_tags"
+        let response: FactsResponse = try await HTTP.get(
+            "https://world.openfoodfacts.org/api/v2/product/\(safe).json",
+            query: ["fields": fields]
+        )
+        guard let p = response.product else { return nil }
+        let facts = ProductFacts(nutriScore: p.nutriscoreGrade,
+                                 nova: p.novaGroup,
+                                 ecoScore: p.environmentalScoreGrade ?? p.ecoscoreGrade,
+                                 allergenTags: p.allergensTags ?? [],
+                                 labelTags: p.labelsTags ?? [])
+        return facts.isEmpty ? nil : facts
+    }
+}
+
 enum ProductLookup {
     /// Nom, marque, photo, contenance et catégories d'un produit à partir de son code-barres.
     static func lookup(code: String) async -> Product? {

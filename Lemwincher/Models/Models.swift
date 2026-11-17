@@ -25,9 +25,32 @@ struct Store: Identifiable, Codable, Hashable {
     var lon: Double
     var priceCount: Int?
     var logoURL: String?
+    /// Horaires au format OpenStreetMap ("Mo-Sa 08:30-20:00; Su 09:00-12:30"), téléphone et site, si connus.
+    var openingHours: String? = nil
+    var phone: String? = nil
+    var website: String? = nil
 
     var coordinate: CLLocationCoordinate2D { CLLocationCoordinate2D(latitude: lat, longitude: lon) }
     var location: CLLocation { CLLocation(latitude: lat, longitude: lon) }
+
+    /// Horaires interprétés (nil si inconnus ou dans un format non géré).
+    var hours: OpeningHours? {
+        guard let openingHours else { return nil }
+        return OpeningHours(openingHours)
+    }
+
+    var phoneURL: URL? {
+        guard let phone = phone?.nilIfBlank else { return nil }
+        let digits = phone.split(separator: ";").first.map(String.init) ?? phone
+        let cleaned = digits.filter { $0.isNumber || $0 == "+" }
+        return cleaned.isEmpty ? nil : URL(string: "tel:" + cleaned)
+    }
+
+    var websiteURL: URL? {
+        guard let website = website?.nilIfBlank?.trimmed else { return nil }
+        let full = website.lowercased().hasPrefix("http") ? website : "https://" + website
+        return URL(string: full)
+    }
 
     /// Type OSM ("NODE", "WAY", "RELATION") si le magasin vient d'OpenStreetMap.
     var osmType: String? { osmParts?.type }
@@ -155,6 +178,44 @@ struct ShoppingItem: Identifiable, Codable, Hashable {
     var checked: Bool = false
 }
 
+/// Un produit dont on surveille le prix autour de soi.
+struct WatchItem: Identifiable, Codable, Hashable {
+    var product: Product
+    /// Prix sous lequel l'utilisateur veut être prévenu (facultatif).
+    var targetPrice: Double? = nil
+    /// Meilleur prix connu autour de soi lors de la dernière vérification.
+    var bestPrice: Double? = nil
+    var bestStoreName: String? = nil
+    var bestDate: Date? = nil
+    var lastChecked: Date? = nil
+    /// Une baisse a été trouvée et pas encore vue par l'utilisateur.
+    var hasNewDrop: Bool = false
+    var previousBestPrice: Double? = nil
+    var createdAt: Date = Date()
+
+    var id: String { product.code }
+}
+
+extension WatchItem {
+    enum CodingKeys: String, CodingKey {
+        case product, targetPrice, bestPrice, bestStoreName, bestDate, lastChecked, hasNewDrop, previousBestPrice, createdAt
+    }
+
+    // Décodage tolérant, comme pour le reste des données sauvegardées.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        product = try c.decode(Product.self, forKey: .product)
+        targetPrice = try? c.decode(Double.self, forKey: .targetPrice)
+        bestPrice = try? c.decode(Double.self, forKey: .bestPrice)
+        bestStoreName = try? c.decode(String.self, forKey: .bestStoreName)
+        bestDate = try? c.decode(Date.self, forKey: .bestDate)
+        lastChecked = try? c.decode(Date.self, forKey: .lastChecked)
+        hasNewDrop = (try? c.decode(Bool.self, forKey: .hasNewDrop)) ?? false
+        previousBestPrice = try? c.decode(Double.self, forKey: .previousBestPrice)
+        createdAt = (try? c.decode(Date.self, forKey: .createdAt)) ?? Date()
+    }
+}
+
 struct AppSettings: Codable, Hashable {
     var radiusKm: Double = 8
     var useHome: Bool = false
@@ -164,6 +225,9 @@ struct AppSettings: Codable, Hashable {
     var supermarketsOnly: Bool = true
     var favoritesOnly: Bool = false
     var favoriteStores: [Store] = []
+    var fuelType: FuelType = .gazole
+    var hasSeenOnboarding: Bool = false
+    var openNowOnly: Bool = false
 
     static let currencies = ["EUR", "KMF", "XOF", "XAF", "MGA", "MUR", "MAD", "DZD", "TND", "CHF", "GBP", "USD", "CAD"]
 
@@ -185,6 +249,9 @@ struct AppSettings: Codable, Hashable {
         supermarketsOnly = (try? c.decode(Bool.self, forKey: .supermarketsOnly)) ?? true
         favoritesOnly = (try? c.decode(Bool.self, forKey: .favoritesOnly)) ?? false
         favoriteStores = (try? c.decode([Store].self, forKey: .favoriteStores)) ?? []
+        fuelType = (try? c.decode(FuelType.self, forKey: .fuelType)) ?? .gazole
+        hasSeenOnboarding = (try? c.decode(Bool.self, forKey: .hasSeenOnboarding)) ?? false
+        openNowOnly = (try? c.decode(Bool.self, forKey: .openNowOnly)) ?? false
     }
 }
 
@@ -194,6 +261,7 @@ struct PersistedState: Codable, Equatable {
     var myPrices: [MyPrice] = []
     var shoppingList: [ShoppingItem] = []
     var recentProducts: [Product] = []
+    var watchlist: [WatchItem] = []
 
     init() {}
 
@@ -203,5 +271,11 @@ struct PersistedState: Codable, Equatable {
         myPrices = (try? c.decode([MyPrice].self, forKey: .myPrices)) ?? []
         shoppingList = (try? c.decode([ShoppingItem].self, forKey: .shoppingList)) ?? []
         recentProducts = (try? c.decode([Product].self, forKey: .recentProducts)) ?? []
+        watchlist = (try? c.decode([WatchItem].self, forKey: .watchlist)) ?? []
     }
+}
+
+/// Onglets de l'app (pour y naviguer depuis Siri ou une notification).
+enum AppTab: Hashable {
+    case stores, compare, list, prices, settings
 }
