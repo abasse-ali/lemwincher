@@ -1,0 +1,70 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Compiler l'IPA iPhone
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer XcodeGen
+        run: brew install xcodegen
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+
+      - name: Générer le projet Xcode
+        run: xcodegen generate
+
+      - name: Version de Xcode
+        run: xcodebuild -version
+
+      - name: Compiler (sans signature)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Lemwincher.xcodeproj \
+            -scheme Lemwincher \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            build 2>&1 | tee xcodebuild.log
+
+      - name: Créer le fichier .ipa
+        run: |
+          APP="build/Build/Products/Release-iphoneos/Lemwincher.app"
+          test -d "$APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry Lemwincher.ipa Payload
+          ls -lh Lemwincher.ipa
+
+      - name: Publier l'IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lemwincher-ipa
+          path: Lemwincher.ipa
+          if-no-files-found: error
+
+      - name: Afficher les erreurs de compilation
+        if: failure()
+        run: grep -E "error:|warning: .*will be an error" xcodebuild.log | sort -u | head -60 || true
+
+      - name: Journal complet (en cas d'erreur)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log

@@ -1,0 +1,12 @@
+# Généré par XcodeGen / Xcode
+*.xcodeproj/
+build/
+DerivedData/
+Payload/
+dist/
+*.ipa
+xcodebuild.log
+
+# macOS / Windows
+.DS_Store
+Thumbs.db

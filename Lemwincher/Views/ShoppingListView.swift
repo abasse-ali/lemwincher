@@ -1,0 +1,377 @@
+import SwiftUI
+
+/// Onglet "Ma liste" : liste de courses et magasin le moins cher pour tout le panier.
+struct ShoppingListView: View {
+    @Environment(AppModel.self) private var model
+
+    /// Relevés à moins de X km, par code produit.
+    @State private var local: [String: [PriceObservation]] = [:]
+    /// Relevés du pays (12 mois), par code produit : servent aux estimations par enseigne.
+    @State private var national: [String: [PriceObservation]] = [:]
+    @State private var loading = false
+    @State private var showCustomAlert = false
+    @State private var customName = ""
+
+    /// Change quand la liste de produits ou la zone change : relance la comparaison.
+    private var listKey: String {
+        model.state.shoppingList.map(\.product.code).sorted().joined(separator: ",") + "#" + model.locationKey
+    }
+
+    // MARK: Calcul du panier
+
+    private var basket: BasketResult {
+        let items = model.state.shoppingList
+        let reference = model.referenceLocation
+        let radius = model.radiusMeters
+        let currency = model.settings.currency
+        let country = model.country
+        let codes = Set(items.map(\.product.code))
+
+        var localByCode = local.mapValues { list in list.filter { $0.currency == currency } }
+        let mine = PriceEngine.observations(from: model.state.myPrices.filter { codes.contains($0.product.code) })
+        for obs in mine where obs.currency == currency {
+            if let distance = obs.distance(from: reference), distance > radius { continue }
+            localByCode[obs.productCode, default: []].append(obs)
+        }
+
+        var estimatesByCode: [String: [ChainEstimate]] = [:]
+        for (code, list) in national {
+            estimatesByCode[code] = ChainStats.estimates(from: PriceEngine.filter(list, country: country, currency: currency))
+        }
+
+        return PriceEngine.basket(items: items,
+                                  localByCode: localByCode,
+                                  estimatesByCode: estimatesByCode,
+                                  candidates: candidateStores(localByCode: localByCode))
+    }
+
+    /// Magasins comparés : ceux qui ont de vrais relevés, le plus proche de chaque enseigne et les favoris.
+    private func candidateStores(localByCode: [String: [PriceObservation]]) -> [Store] {
+        let storesByID = Dictionary(model.stores.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var result: [String: Store] = [:]
+        for list in localByCode.values {
+            for obs in list {
+                guard result[obs.storeKey] == nil else { continue }
+                if let store = storesByID[obs.storeKey] ?? obs.store {
+                    result[store.id] = store
+                }
+            }
+        }
+        for store in model.nearestStoreByChain.values where result[store.id] == nil {
+            result[store.id] = store
+        }
+        for store in model.state.settings.favoriteStores where result[store.id] == nil {
+            result[store.id] = store
+        }
+        var list = Array(result.values)
+        let favorites = model.state.settings.favoriteStores
+        if model.state.settings.favoritesOnly && !favorites.isEmpty {
+            let ids = Set(favorites.map(\.id))
+            list = list.filter { ids.contains($0.id) }
+        }
+        return list
+    }
+
+    // MARK: Vue
+
+    var body: some View {
+        @Bindable var bindable = model
+        NavigationStack {
+            List {
+                if model.state.shoppingList.isEmpty {
+                    ContentUnavailableView {
+                        Label("Votre liste est vide", systemImage: "cart")
+                    } description: {
+                        Text("Ajoutez des produits depuis l'onglet Comparer (bouton « Ajouter à ma liste »), ou un produit sans code-barres avec le menu ⋯. Lemwincher vous dira où faire vos courses pour payer le moins cher.")
+                    } actions: {
+                        Button("Produit sans code-barres") { showCustomAlert = true }
+                            .buttonStyle(.bordered)
+                    }
+                } else {
+                    Section("Produits (\(model.state.shoppingList.count))") {
+                        ForEach($bindable.state.shoppingList) { $item in
+                            ShoppingRow(item: $item)
+                        }
+                        .onDelete { offsets in
+                            bindable.state.shoppingList.remove(atOffsets: offsets)
+                        }
+                    }
+                    if !model.state.settings.favoriteStores.isEmpty {
+                        Section {
+                            Toggle(isOn: $bindable.state.settings.favoritesOnly) {
+                                Label("Seulement mes magasins (\(model.state.settings.favoriteStores.count))",
+                                      systemImage: "star")
+                            }
+                        }
+                    }
+                    basketSections
+                }
+            }
+            .navigationTitle("Ma liste")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    if !model.state.shoppingList.isEmpty {
+                        ShareLink(item: model.shoppingListText) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            showCustomAlert = true
+                        } label: {
+                            Label("Produit sans code-barres", systemImage: "text.badge.plus")
+                        }
+                        Button(role: .destructive) {
+                            model.state.shoppingList.removeAll(where: \.checked)
+                        } label: {
+                            Label("Retirer les produits cochés", systemImage: "checkmark.circle")
+                        }
+                        Button(role: .destructive) {
+                            model.state.shoppingList.removeAll()
+                        } label: {
+                            Label("Vider la liste", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+            }
+            .alert("Produit sans code-barres", isPresented: $showCustomAlert) {
+                TextField("Ex. : Riz parfumé 5 kg", text: $customName)
+                Button("Ajouter") { addCustomProduct() }
+                Button("Annuler", role: .cancel) { customName = "" }
+            } message: {
+                Text("Fruits, légumes, vrac… Utilisez le même nom quand vous relevez son prix dans « Mes prix ».")
+            }
+            .task(id: listKey) { await loadPrices() }
+            .refreshable { await loadPrices() }
+            .appDestinations()
+        }
+    }
+
+    // MARK: Comparatif du panier
+
+    @ViewBuilder
+    private var basketSections: some View {
+        let result = basket
+        let itemCount = model.state.shoppingList.count
+        let currency = model.settings.currency
+        let reference = model.referenceLocation
+
+        if loading && result.stores.isEmpty {
+            Section {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Comparaison des prix autour de vous…").foregroundStyle(.secondary)
+                }
+            }
+        }
+
+        if !result.stores.isEmpty {
+            Section {
+                ForEach(Array(result.stores.prefix(8).enumerated()), id: \.element.id) { index, storeBasket in
+                    let row = StoreBasketRow(basket: storeBasket,
+                                             itemCount: itemCount,
+                                             currency: currency,
+                                             best: index == 0,
+                                             distance: storeBasket.store?.distance(from: reference),
+                                             favorite: model.state.settings.favoriteStores.contains { $0.id == storeBasket.storeKey })
+                    if let store = storeBasket.store {
+                        NavigationLink(value: store) { row }
+                    } else {
+                        row
+                    }
+                }
+            } header: {
+                Text("Où faire mes courses ?")
+            } footer: {
+                Text("Pour chaque magasin : le prix réellement relevé quand il existe, sinon le prix médian de son enseigne en France (« estimé »). Classement : d'abord le nombre de produits trouvés, puis le total.")
+            }
+        }
+
+        if result.bestSplitStoreCount > 1 {
+            Section {
+                ForEach(result.bestSplit) { line in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(line.item.quantity > 1 ? "\(line.item.quantity) × \(line.item.product.name)" : line.item.product.name)
+                                .lineLimit(1)
+                            Text(line.storeName).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(Fmt.price(line.subtotal, line.currency)).monospacedDigit()
+                    }
+                }
+                HStack {
+                    Text("Total").bold()
+                    Spacer()
+                    Text(Fmt.price(result.bestSplitTotal, currency)).bold().monospacedDigit()
+                }
+            } header: {
+                Text("Le moins cher en combinant \(result.bestSplitStoreCount) magasins")
+            } footer: {
+                Text("Uniquement avec des prix réellement relevés autour de vous.")
+            }
+        }
+
+        if !result.unknown.isEmpty && !loading {
+            Section {
+                ForEach(result.unknown) { item in
+                    Text(item.product.name).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Sans prix connu")
+            } footer: {
+                Text("Relevez leur prix lors de vos prochaines courses (onglet « Mes prix ») pour les inclure dans la comparaison.")
+            }
+        }
+    }
+
+    // MARK: Actions
+
+    private func addCustomProduct() {
+        let name = customName.trimmed
+        customName = ""
+        guard !name.isEmpty else { return }
+        model.addToList(.custom(named: name))
+    }
+
+    private func loadPrices() async {
+        let codes = Array(Set(model.state.shoppingList.map(\.product.code).filter { !$0.hasPrefix("custom:") }))
+        guard !codes.isEmpty else {
+            local = [:]
+            national = [:]
+            return
+        }
+        let lat = model.referenceLocation?.coordinate.latitude
+        let lon = model.referenceLocation?.coordinate.longitude
+        let radiusKm = model.settings.radiusKm
+
+        loading = true
+        let results = await withTaskGroup(of: (String, [PriceObservation], [PriceObservation]).self,
+                                          returning: [(String, [PriceObservation], [PriceObservation])].self) { group in
+            for code in codes {
+                group.addTask {
+                    var localObservations: [PriceObservation] = []
+                    if let lat, let lon {
+                        let prices = (try? await OpenPricesAPI.pricesNear(productCode: code, lat: lat, lon: lon, radiusKm: radiusKm)) ?? []
+                        localObservations = PriceEngine.observations(from: prices)
+                    }
+                    let nationalPrices = (try? await OpenPricesAPI.nationalPrices(productCode: code)) ?? []
+                    return (code, localObservations, PriceEngine.observations(from: nationalPrices))
+                }
+            }
+            var collected: [(String, [PriceObservation], [PriceObservation])] = []
+            for await entry in group {
+                collected.append(entry)
+            }
+            return collected
+        }
+        if Task.isCancelled {
+            loading = false
+            return
+        }
+        var newLocal: [String: [PriceObservation]] = [:]
+        var newNational: [String: [PriceObservation]] = [:]
+        for (code, localObservations, nationalObservations) in results {
+            newLocal[code] = localObservations
+            newNational[code] = nationalObservations
+        }
+        local = newLocal
+        national = newNational
+        loading = false
+    }
+}
+
+// MARK: - Lignes
+
+struct ShoppingRow: View {
+    @Binding var item: ShoppingItem
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button {
+                item.checked.toggle()
+            } label: {
+                Image(systemName: item.checked ? "checkmark.circle.fill" : "circle")
+                    .font(.title2)
+                    .foregroundStyle(item.checked ? Color.brand : Color.secondary)
+            }
+            .buttonStyle(.plain)
+
+            ProductThumb(url: item.product.imageURL, size: 36)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.product.name)
+                    .strikethrough(item.checked)
+                    .foregroundStyle(item.checked ? Color.secondary : Color.primary)
+                    .lineLimit(2)
+                if let brand = item.product.brand {
+                    Text(brand).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            Text("×\(item.quantity)").monospacedDigit().foregroundStyle(.secondary)
+            Stepper("Quantité", value: $item.quantity, in: 1...99)
+                .labelsHidden()
+        }
+    }
+}
+
+struct StoreBasketRow: View {
+    let basket: StoreBasket
+    let itemCount: Int
+    let currency: String
+    let best: Bool
+    let distance: Double?
+    var favorite: Bool = false
+
+    private var summary: String {
+        let estimates = basket.estimateCount
+        let estimateText: String? = estimates > 0 ? "dont \(estimates) estimé" + (estimates > 1 ? "s" : "") : nil
+        let distanceText: String? = distance.map { Fmt.distance($0) }
+        return Fmt.join("\(basket.lines.count)/\(itemCount) produits", estimateText, distanceText)
+    }
+
+    var body: some View {
+        let estimates = basket.estimateCount
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(basket.storeName).font(.headline).lineLimit(1)
+                        if favorite {
+                            Image(systemName: "star.fill").font(.caption).foregroundStyle(Color.yellow)
+                        }
+                        if best {
+                            Text("Meilleur choix")
+                                .font(.caption2.bold())
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.brand, in: Capsule())
+                                .foregroundStyle(Color.white)
+                        }
+                    }
+                    Text(summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Text((estimates > 0 ? "≈ " : "") + Fmt.price(basket.total, currency))
+                    .font(.title3.bold().monospacedDigit())
+                    .foregroundStyle(best ? Color.brand : Color.primary)
+            }
+            if !basket.missing.isEmpty {
+                Text("Prix inconnu ici : " + basket.missing.map(\.product.name).joined(separator: ", "))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
