@@ -240,24 +240,35 @@ enum FuelStats {
     /// sinon supermarché à moins de 300 m ("Station près de E.Leclerc").
     static func label(_ stations: [FuelStation], places: [NamedPlace], stores: [Store]) -> [FuelStation] {
         let supermarkets = stores.filter { $0.isSupermarket && $0.chainKey != nil }
-        return stations.map { station in
+        let namedPlaces = places.filter { $0.name?.nilIfBlank != nil || $0.brand?.nilIfBlank != nil }
+        var result: [FuelStation] = []
+        for station in stations {
             var labeled = station
             let here = station.location
-            let place = places
-                .map { ($0, $0.location.distance(from: here)) }
-                .filter { $0.1 <= 150 && ($0.0.name?.nilIfBlank != nil || $0.0.brand?.nilIfBlank != nil) }
-                .min { $0.1 < $1.1 }?.0
-            if let place {
+            if let place = nearest(namedPlaces, to: here, within: 150, location: { $0.location }) {
                 labeled.brand = place.brand?.nilIfBlank
                 labeled.name = place.name?.nilIfBlank ?? place.brand?.nilIfBlank
-            } else if let store = supermarkets
-                .map({ ($0, $0.location.distance(from: here)) })
-                .filter({ $0.1 <= 300 })
-                .min(by: { $0.1 < $1.1 })?.0 {
+            } else if let store = nearest(supermarkets, to: here, within: 300, location: { $0.location }) {
                 labeled.nearbyStoreName = store.chainName ?? store.name
                 labeled.brand = store.brand
             }
-            return labeled
+            result.append(labeled)
         }
+        return result
+    }
+
+    /// L'élément le plus proche de `here` à moins de `maxDistance` mètres.
+    private static func nearest<T>(_ items: [T], to here: CLLocation, within maxDistance: Double,
+                                   location: (T) -> CLLocation) -> T? {
+        var best: T? = nil
+        var bestDistance = Double.infinity
+        for item in items {
+            let distance = location(item).distance(from: here)
+            if distance <= maxDistance && distance < bestDistance {
+                best = item
+                bestDistance = distance
+            }
+        }
+        return best
     }
 }
