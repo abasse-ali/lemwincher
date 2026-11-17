@@ -51,13 +51,15 @@ final class LemwincherUITests: XCTestCase {
         sleep(1)
     }
 
-    /// Fait défiler la liste jusqu'à ce que l'élément soit visible (au plus `swipes` fois).
-    private func scrollTo(_ element: XCUIElement, in app: XCUIApplication, swipes: Int = 4) {
+    /// Remonte la liste jusqu'à ce que l'élément apparaisse (au plus `swipes` fois).
+    @discardableResult
+    private func scrollDown(until element: XCUIElement, in app: XCUIApplication, swipes: Int = 8) -> Bool {
         var count = 0
-        while (!element.exists || !element.isHittable) && count < swipes {
-            app.swipeUp()
+        while !element.exists && count < swipes {
+            app.swipeDown()
             count += 1
         }
+        return element.exists
     }
 
     private func tab(_ app: XCUIApplication, _ label: String) {
@@ -89,41 +91,28 @@ final class LemwincherUITests: XCTestCase {
         XCTAssertTrue(storeRow.waitForExistence(timeout: 90), "des magasins autour du Capitole")
         sleep(4)
         snapshot("01-autour-de-moi")
-        app.swipeUp()
-        sleep(1)
-        snapshot("02-autour-de-moi-liste")
 
-        if storeRow.exists && storeRow.isHittable {
-            storeRow.tap()
-            sleep(5)
-            snapshot("03-fiche-magasin")
-            app.swipeUp()
-            sleep(1)
-            snapshot("04-fiche-magasin-horaires")
-            goBack(app)
-        }
-        // Toucher l'onglet actif ramène en haut de la liste.
-        tab(app, "Autour de moi")
-        tab(app, "Autour de moi")
-        sleep(1)
-
+        // Carburant et classement d'abord, tant que la liste est en haut
+        // (les lignes hors de l'écran n'existent pas pour les tests).
         let fuel = element(app, "fuelLink")
-        if fuel.waitForExistence(timeout: 30) {
-            if !fuel.isHittable { app.swipeDown() }
+        if fuel.waitForExistence(timeout: 30) || scrollDown(until: fuel, in: app) {
             fuel.tap()
             _ = element(app, "fuelStationFirst").waitForExistence(timeout: 40)
             sleep(3)
             snapshot("05-carburants")
-            app.swipeUp()
-            sleep(1)
-            snapshot("06-carburants-liste")
             let first = element(app, "fuelStationFirst")
+            if !first.isHittable && first.exists {
+                app.collectionViews.firstMatch.swipeUp(velocity: .slow)
+            }
             if first.exists && first.isHittable {
                 first.tap()
                 sleep(2)
                 snapshot("07-station")
                 goBack(app)
             }
+            app.swipeUp()
+            sleep(1)
+            snapshot("06-carburants-liste")
             goBack(app)
         } else {
             snapshot("05-carburants-introuvable")
@@ -131,15 +120,32 @@ final class LemwincherUITests: XCTestCase {
         }
 
         let ranking = element(app, "chainRankingLink")
-        if ranking.waitForExistence(timeout: 150) {
-            scrollTo(ranking, in: app)
+        if ranking.waitForExistence(timeout: 150) || scrollDown(until: ranking, in: app) {
+            if !ranking.isHittable {
+                app.collectionViews.firstMatch.swipeUp(velocity: .slow)
+            }
             ranking.tap()
             sleep(2)
-            snapshot("07b-classement-enseignes")
+            snapshot("08a-classement-enseignes")
             goBack(app)
         } else {
-            snapshot("07b-classement-introuvable")
-            dump(app, "07b-classement-introuvable")
+            snapshot("08a-classement-introuvable")
+            dump(app, "08a-classement-introuvable")
+        }
+
+        // Liste des magasins et fiche d'un magasin.
+        app.swipeUp()
+        sleep(1)
+        snapshot("02-autour-de-moi-liste")
+        let row = element(app, "storeRow")
+        if row.exists && row.isHittable {
+            row.tap()
+            sleep(5)
+            snapshot("03-fiche-magasin")
+            app.swipeUp()
+            sleep(1)
+            snapshot("04-fiche-magasin-horaires")
+            goBack(app)
         }
 
         // 2. Comparer : produits suivis, rappels, produits consultés.

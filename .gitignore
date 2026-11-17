@@ -10,3 +10,6 @@ xcodebuild.log
 # macOS / Windows
 .DS_Store
 Thumbs.db
+captures/
+captures-new/
+dist-new/
