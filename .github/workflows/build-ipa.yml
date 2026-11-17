@@ -7,11 +7,11 @@ on:
 
 jobs:
   build:
-    name: Compiler l'IPA iPhone
+    name: Tests et IPA iPhone
     # Mac Intel : les Mac Apple Silicon (macos-latest) de GitHub étaient saturés en novembre 2026.
     # Si ce Mac Intel est un jour retiré par GitHub, remplacer par macos-latest.
     runs-on: macos-15-intel
-    timeout-minutes: 30
+    timeout-minutes: 50
     steps:
       - name: Récupérer le code
         uses: actions/checkout@v4
@@ -28,7 +28,76 @@ jobs:
       - name: Version de Xcode
         run: xcodebuild -version
 
-      - name: Compiler (sans signature)
+      - name: Choisir un simulateur iPhone
+        id: sim
+        run: |
+          SDK=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          UDID=$(xcrun simctl list devices available -j | python3 .github/scripts/pick_simulator.py "$SDK")
+          echo "SDK simulateur : $SDK"
+          xcrun simctl list devices available | grep "$UDID"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$UDID" || true
+
+      - name: Compiler pour le simulateur (app + tests)
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing \
+            -project Lemwincher.xcodeproj \
+            -scheme Lemwincher \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build-sim \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee xcodebuild-sim.log | grep -E "error:|warning: .*Lemwincher|BUILD|\*\*" || true
+          grep -q "TEST BUILD SUCCEEDED" xcodebuild-sim.log
+
+      - name: Tests unitaires
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building \
+            -project Lemwincher.xcodeproj \
+            -scheme Lemwincher \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build-sim \
+            -only-testing:LemwincherTests \
+            -resultBundlePath results/unit-tests.xcresult \
+            2>&1 | tee unit-tests.log | grep -E "Test Case .*(passed|failed)|error:|Executed" || true
+          grep -q "TEST EXECUTE SUCCEEDED" unit-tests.log
+
+      - name: Tests d'interface et captures d'écran
+        id: uitests
+        continue-on-error: true
+        timeout-minutes: 20
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building \
+            -project Lemwincher.xcodeproj \
+            -scheme Lemwincher \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build-sim \
+            -only-testing:LemwincherUITests \
+            -resultBundlePath results/ui-tests.xcresult \
+            2>&1 | tee ui-tests.log | grep -E "Test Case .*(passed|failed)|error:|Executed" || true
+          grep -q "TEST EXECUTE SUCCEEDED" ui-tests.log
+
+      - name: Rassembler les captures d'écran
+        if: always()
+        run: |
+          mkdir -p screenshots
+          cp -R "$HOME/lemwincher-screenshots/." screenshots/ 2>/dev/null || true
+          if [ -z "$(ls -A screenshots)" ] && [ -d results/ui-tests.xcresult ]; then
+            xcrun xcresulttool export attachments --path results/ui-tests.xcresult --output-path screenshots || true
+          fi
+          ls -la screenshots
+
+      - name: Publier les captures d'écran
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: captures-ecran
+          path: screenshots
+          if-no-files-found: ignore
+
+      - name: Compiler l'IPA (sans signature)
         run: |
           set -o pipefail
           xcodebuild \
@@ -42,7 +111,8 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             CURRENT_PROJECT_VERSION=${{ github.run_number }} \
-            build 2>&1 | tee xcodebuild.log
+            build 2>&1 | tee xcodebuild.log | grep -E "error:|BUILD|\*\*" || true
+          grep -q "BUILD SUCCEEDED" xcodebuild.log
 
       - name: Créer le fichier .ipa
         run: |
@@ -60,14 +130,32 @@ jobs:
           path: Lemwincher.ipa
           if-no-files-found: error
 
+      - name: Résumé des tests
+        if: always()
+        run: |
+          {
+            echo "## Tests"
+            for log in unit-tests.log ui-tests.log; do
+              [ -f "$log" ] || continue
+              echo "### $log"
+              echo '```'
+              grep -E "Executed [0-9]+ tests" "$log" | tail -1 || true
+              grep -E "error:|Test Case .*failed" "$log" | sort -u | head -40 || true
+              echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Afficher les erreurs de compilation
         if: failure()
         run: |
-          grep -E "error:|will be an error" xcodebuild.log | sort -u | head -80 || true
+          grep -hE "error:|will be an error" xcodebuild-sim.log xcodebuild.log 2>/dev/null | sort -u | head -80 || true
 
-      - name: Journal complet (en cas d'erreur)
-        if: failure()
+      - name: Journaux complets
+        if: failure() || steps.uitests.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
-          name: xcodebuild-log
-          path: xcodebuild.log
+          name: journaux
+          path: |
+            *.log
+            results
+          if-no-files-found: ignore

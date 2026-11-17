@@ -70,8 +70,8 @@ struct FuelStation: Identifiable, Hashable {
 
     var title: String {
         if let name = name?.nilIfBlank { return name }
-        if let brand = brand?.nilIfBlank { return brand }
         if let store = nearbyStoreName { return "Station près de \(store)" }
+        if let brand = brand?.nilIfBlank { return brand }
         return "Station \(FuelStation.prettify(city))"
     }
 
