@@ -184,6 +184,19 @@ final class StoreSourcesTests: XCTestCase {
         XCTAssertEqual(stores[1].name, "Supérette")
     }
 
+    func testAppleMapsResultsOnlyCountKnownChainsAsSupermarkets() {
+        let coordinate = CLLocationCoordinate2D(latitude: 43.6, longitude: 1.44)
+        let carrefour = StoreFinder.appleStore(name: "Carrefour City Capitole", address: nil, coordinate: coordinate)
+        XCTAssertTrue(carrefour.isSupermarket)
+        XCTAssertEqual(carrefour.brand, "Carrefour City")
+        XCTAssertEqual(carrefour.chainKey, "carrefour city")
+
+        let teaShop = StoreFinder.appleStore(name: "Palais des Thés", address: nil, coordinate: coordinate)
+        XCTAssertFalse(teaShop.isSupermarket, "un salon de thé n'est pas un supermarché")
+        XCTAssertNil(teaShop.brand)
+        XCTAssertTrue(teaShop.id.hasPrefix("apple:"))
+    }
+
     func testStoreCacheValidity() {
         let here = CLLocation(latitude: 43.6045, longitude: 1.4433)
         let near = Fixtures.store("NODE:1", lat: 43.6050, lon: 1.4440)

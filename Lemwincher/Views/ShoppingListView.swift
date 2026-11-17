@@ -396,16 +396,46 @@ struct ShoppingRow: View {
                     .foregroundStyle(item.checked ? Color.secondary : Color.primary)
                     .lineLimit(2)
                 if let brand = item.product.brand {
-                    Text(brand).font(.caption).foregroundStyle(.secondary)
+                    Text(brand).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
+            .layoutPriority(1)
 
             Spacer(minLength: 4)
 
-            Text("×\(item.quantity)").monospacedDigit().foregroundStyle(.secondary)
-            Stepper("Quantité", value: $item.quantity, in: 1...99)
-                .labelsHidden()
+            QuantityControl(quantity: $item.quantity)
         }
+    }
+}
+
+/// Petit sélecteur de quantité − 2 + (plus compact qu'un Stepper).
+struct QuantityControl: View {
+    @Binding var quantity: Int
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button {
+                if quantity > 1 { quantity -= 1 }
+            } label: {
+                Image(systemName: "minus").frame(width: 28, height: 28)
+            }
+            .disabled(quantity <= 1)
+            .accessibilityLabel("Moins")
+
+            Text("\(quantity)")
+                .monospacedDigit()
+                .frame(minWidth: 20)
+
+            Button {
+                if quantity < 99 { quantity += 1 }
+            } label: {
+                Image(systemName: "plus").frame(width: 28, height: 28)
+            }
+            .accessibilityLabel("Plus")
+        }
+        .font(.subheadline.weight(.semibold))
+        .buttonStyle(.borderless)
+        .background(Color(.tertiarySystemFill), in: Capsule())
     }
 }
 

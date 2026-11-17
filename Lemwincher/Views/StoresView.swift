@@ -38,8 +38,10 @@ struct StoresView: View {
         .task(id: model.locationKey) {
             await model.refreshStores()
             camera = .automatic
-            await model.refreshFuel()
-            await model.refreshChainIndex()
+            // Carburants et classement des enseignes en parallèle.
+            async let fuel: Void = model.refreshFuel()
+            async let ranking: Void = model.refreshChainIndex()
+            _ = await (fuel, ranking)
         }
     }
 

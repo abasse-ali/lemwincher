@@ -28,13 +28,36 @@ final class LemwincherUITests: XCTestCase {
         }
     }
 
+    /// Arborescence de l'écran en texte, pour comprendre un élément introuvable.
+    private func dump(_ app: XCUIApplication, _ name: String) {
+        let attachment = XCTAttachment(string: app.debugDescription)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        if let home = ProcessInfo.processInfo.environment["SIMULATOR_HOST_HOME"] {
+            let folder = URL(fileURLWithPath: home).appendingPathComponent("lemwincher-screenshots")
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try? app.debugDescription.write(to: folder.appendingPathComponent(name + ".txt"), atomically: true, encoding: .utf8)
+        }
+    }
+
     private func element(_ app: XCUIApplication, _ identifier: String) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
     private func goBack(_ app: XCUIApplication) {
-        let back = app.navigationBars.buttons.element(boundBy: 0)
+        let back = app.navigationBars.buttons.firstMatch
         if back.exists { back.tap() }
+        sleep(1)
+    }
+
+    /// Fait défiler la liste jusqu'à ce que l'élément soit visible (au plus `swipes` fois).
+    private func scrollTo(_ element: XCUIElement, in app: XCUIApplication, swipes: Int = 4) {
+        var count = 0
+        while (!element.exists || !element.isHittable) && count < swipes {
+            app.swipeUp()
+            count += 1
+        }
     }
 
     private func tab(_ app: XCUIApplication, _ label: String) {
@@ -79,32 +102,44 @@ final class LemwincherUITests: XCTestCase {
             snapshot("04-fiche-magasin-horaires")
             goBack(app)
         }
-        app.swipeDown()
-        app.swipeDown()
+        // Toucher l'onglet actif ramène en haut de la liste.
+        tab(app, "Autour de moi")
+        tab(app, "Autour de moi")
+        sleep(1)
 
         let fuel = element(app, "fuelLink")
-        if fuel.waitForExistence(timeout: 20) {
+        if fuel.waitForExistence(timeout: 30) {
+            if !fuel.isHittable { app.swipeDown() }
             fuel.tap()
             _ = element(app, "fuelStationFirst").waitForExistence(timeout: 40)
             sleep(3)
             snapshot("05-carburants")
+            app.swipeUp()
+            sleep(1)
+            snapshot("06-carburants-liste")
             let first = element(app, "fuelStationFirst")
             if first.exists && first.isHittable {
                 first.tap()
                 sleep(2)
-                snapshot("06-station")
+                snapshot("07-station")
                 goBack(app)
             }
             goBack(app)
+        } else {
+            snapshot("05-carburants-introuvable")
+            dump(app, "05-carburants-introuvable")
         }
 
         let ranking = element(app, "chainRankingLink")
-        if ranking.waitForExistence(timeout: 60) {
-            if !ranking.isHittable { app.swipeUp() }
+        if ranking.waitForExistence(timeout: 150) {
+            scrollTo(ranking, in: app)
             ranking.tap()
             sleep(2)
-            snapshot("07-classement-enseignes")
+            snapshot("07b-classement-enseignes")
             goBack(app)
+        } else {
+            snapshot("07b-classement-introuvable")
+            dump(app, "07b-classement-introuvable")
         }
 
         // 2. Comparer : produits suivis, rappels, produits consultés.

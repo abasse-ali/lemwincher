@@ -160,20 +160,28 @@ enum StoreFinder {
         do {
             let response = try await MKLocalSearch(request: request).start()
             return response.mapItems.map { item in
-                let c = item.placemark.coordinate
-                return Store(id: String(format: "apple:%.5f,%.5f", c.latitude, c.longitude),
-                             name: item.name ?? "Magasin",
-                             brand: nil,
-                             kind: "supermarket",
-                             address: item.placemark.title,
-                             lat: c.latitude,
-                             lon: c.longitude,
-                             priceCount: nil,
-                             logoURL: nil)
+                appleStore(name: item.name ?? "Magasin",
+                           address: item.placemark.title,
+                           coordinate: item.placemark.coordinate)
             }
         } catch {
             return []
         }
+    }
+
+    /// Plans classe dans « alimentation » aussi bien les supermarchés que les cavistes ou salons de thé :
+    /// seules les enseignes reconnues comptent comme supermarchés, les autres comme petits commerces.
+    static func appleStore(name: String, address: String?, coordinate c: CLLocationCoordinate2D) -> Store {
+        let chain = Chain.key(brand: nil, name: name)
+        return Store(id: String(format: "apple:%.5f,%.5f", c.latitude, c.longitude),
+                     name: name,
+                     brand: chain.flatMap { Chain.displayName(for: $0) },
+                     kind: chain == nil ? "convenience" : "supermarket",
+                     address: address,
+                     lat: c.latitude,
+                     lon: c.longitude,
+                     priceCount: nil,
+                     logoURL: nil)
     }
 }
 
