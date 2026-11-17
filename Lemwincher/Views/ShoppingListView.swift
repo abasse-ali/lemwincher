@@ -617,7 +617,7 @@ struct SuggestionRow: View {
                 HStack(spacing: 10) {
                     Image(systemName: chosen ? "checkmark.circle.fill" : "circle")
                         .foregroundStyle(chosen ? Color.brand : Color.secondary)
-                    ProductThumb(url: suggestion.product.imageURL, size: 40)
+                    ProductThumb(url: suggestion.product.imageURL, size: 36)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(suggestion.product.name)
                             .font(.subheadline)
@@ -633,9 +633,12 @@ struct SuggestionRow: View {
                                 .lineLimit(1)
                         }
                     }
-                    .layoutPriority(1)
-                    Spacer(minLength: 4)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // Le prix garde toujours sa largeur ; c'est le nom qui se raccourcit.
                     priceView
+                        .fixedSize()
+                        .layoutPriority(2)
                 }
                 .contentShape(Rectangle())
             }
