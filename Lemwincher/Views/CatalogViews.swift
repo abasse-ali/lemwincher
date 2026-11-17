@@ -3,16 +3,20 @@ import SwiftUI
 // MARK: - Grille des rayons
 
 /// Les rayons du catalogue, en tuiles (3 par ligne).
+/// Des boutons (et non des liens) : plusieurs liens dans une même ligne de liste s'ouvriraient tous à la fois.
 struct RayonGrid: View {
+    let onSelect: (Rayon) -> Void
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
 
     var body: some View {
         LazyVGrid(columns: columns, spacing: 10) {
             ForEach(Rayon.all) { rayon in
-                NavigationLink(value: rayon) {
+                Button {
+                    onSelect(rayon)
+                } label: {
                     RayonTile(rayon: rayon)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
                 .accessibilityIdentifier("rayon-\(rayon.tag)")
             }
         }
@@ -33,6 +37,7 @@ struct RayonTile: View {
                             in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             Text(rayon.name)
                 .font(.caption.weight(.medium))
+                .foregroundStyle(Color.primary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .minimumScaleFactor(0.85)

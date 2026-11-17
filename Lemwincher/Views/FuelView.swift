@@ -245,6 +245,7 @@ struct FuelStationRow: View {
 struct FuelStationDetailView: View {
     @Environment(AppModel.self) private var model
     let station: FuelStation
+    @State private var showExpense = false
 
     var body: some View {
         List {
@@ -274,6 +275,11 @@ struct FuelStationDetailView: View {
                     Link(destination: url) {
                         Label("Itinéraire avec Plans", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
                     }
+                }
+                Button {
+                    showExpense = true
+                } label: {
+                    Label("J'ai fait le plein (ajouter au budget)", systemImage: "eurosign.circle")
                 }
             }
 
@@ -313,6 +319,14 @@ struct FuelStationDetailView: View {
         }
         .navigationTitle(station.title)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showExpense) {
+            ExpenseEditor(expense: nil,
+                          prefill: Expense(amount: 0,
+                                           date: Date(),
+                                           storeName: station.title,
+                                           category: .fuel,
+                                           note: model.settings.fuelType.label))
+        }
     }
 }
 

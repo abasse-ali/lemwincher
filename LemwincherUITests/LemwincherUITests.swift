@@ -73,7 +73,7 @@ final class LemwincherUITests: XCTestCase {
         let next = element(app, "onboardingNext")
         XCTAssertTrue(next.waitForExistence(timeout: 20))
         snapshot("00-presentation-1")
-        for index in 2...4 {
+        for index in 2...5 {
             next.tap()
             sleep(1)
             snapshot("00-presentation-\(index)")
@@ -119,11 +119,21 @@ final class LemwincherUITests: XCTestCase {
             dump(app, "05-carburants-introuvable")
         }
 
+        // Le lien est sous les 6 premières enseignes : on attend le calcul puis on fait défiler.
         let ranking = element(app, "chainRankingLink")
-        if ranking.waitForExistence(timeout: 150) || scrollDown(until: ranking, in: app) {
-            if !ranking.isHittable {
-                app.collectionViews.firstMatch.swipeUp(velocity: .slow)
+        var rankingFound = ranking.waitForExistence(timeout: 20)
+        var attempts = 0
+        while !rankingFound && attempts < 4 {
+            reveal(ranking, in: app, swipes: 3)
+            rankingFound = ranking.exists
+            if !rankingFound {
+                scrollDown(until: element(app, "fuelLink"), in: app)
+                sleep(20)
             }
+            attempts += 1
+        }
+        if rankingFound {
+            reveal(ranking, in: app, swipes: 2)
             ranking.tap()
             sleep(2)
             snapshot("08a-classement-enseignes")
@@ -196,12 +206,16 @@ final class LemwincherUITests: XCTestCase {
         scrollDown(until: search, in: app)
         if search.waitForExistence(timeout: 5) {
             search.tap()
-            search.typeText("yaourt nature")
+            search.typeText("yaourt nature\n")
             sleep(10)
             snapshot("12b-recherche-catalogue")
             app.swipeUp()
             sleep(4)
             snapshot("12c-recherche-plus-de-produits")
+            // Quitter la recherche : le clavier cache la barre d'onglets.
+            let cancel = app.buttons["Annuler"].firstMatch
+            if cancel.exists { cancel.tap() } else { app.buttons["Cancel"].firstMatch.tap() }
+            sleep(1)
         }
 
         // 3. Ma liste : ajout rapide et magasin le moins cher.

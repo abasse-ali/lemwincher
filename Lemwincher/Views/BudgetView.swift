@@ -393,6 +393,7 @@ struct ExpenseEditor: View {
 
     private let original: Expense?
     private let prefill: Expense?
+    private let initialStoreID: String
     /// Appelé après l'enregistrement (ex. retirer les produits cochés de la liste).
     private let onSaved: (() -> Void)?
     private let clearOptionLabel: String?
@@ -415,6 +416,7 @@ struct ExpenseEditor: View {
         _amountText = State(initialValue: (source?.amount ?? 0) > 0 ? amount : "")
         _date = State(initialValue: source?.date ?? Date())
         _storeID = State(initialValue: source?.storeID ?? "")
+        initialStoreID = source?.storeID ?? ""
         _category = State(initialValue: source?.category ?? .groceries)
         _note = State(initialValue: source?.note ?? "")
         _itemCount = State(initialValue: source?.itemCount)
@@ -508,7 +510,8 @@ struct ExpenseEditor: View {
             expense.storeID = store.id
             expense.storeName = store.name
             expense.chainKey = store.chainKey
-        } else if storeID.isEmpty {
+        } else if storeID.isEmpty && !initialStoreID.isEmpty {
+            // L'utilisateur a choisi « Aucun » magasin.
             expense.storeID = nil
             expense.storeName = nil
             expense.chainKey = nil

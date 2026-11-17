@@ -147,7 +147,9 @@ struct SearchView: View {
         }
 
         Section {
-            RayonGrid()
+            RayonGrid { rayon in
+                path.append(rayon)
+            }
         } header: {
             Text("Rayons")
         } footer: {

@@ -429,6 +429,10 @@ final class AppModel {
     func addExpense(_ expense: Expense) {
         let before = budgetSummary
         state.expenses.append(expense)
+        // Autorisation des notifications demandée une seule fois par iOS (alertes de budget).
+        if state.settings.budgetAlerts && !isUITest {
+            Task { await Notifier.requestPermission() }
+        }
         guard before.period.contains(expense.date) else { return }
         let after = budgetSummary
         guard let threshold = BudgetEngine.thresholdCrossed(before: before.spent, after: after.spent,

@@ -15,7 +15,10 @@ struct OnboardingView: View {
     private let pages: [Page] = [
         Page(icon: "cart.fill", color: Color.brand,
              title: "Payez moins cher vos courses",
-             text: "Lemwincher compare les prix des supermarchés autour de chez vous : scannez un produit, faites votre liste, et l'app vous dit où l'acheter au meilleur prix."),
+             text: "Parcourez des centaines de milliers de produits par rayon, faites votre liste (« Œufs » vous propose les vrais produits et leur prix), et l'app vous dit où acheter au meilleur prix."),
+        Page(icon: "eurosign.circle.fill", color: Color.purple,
+             title: "Tenez votre budget",
+             text: "Fixez votre budget courses du mois (100 € par exemple). Lemwincher vous dit ce qu'il reste, combien vous pouvez dépenser par jour, et vous prévient avant de dépasser."),
         Page(icon: "chart.bar.fill", color: Color.blue,
              title: "Des prix réels, partout en France",
              text: "Les prix viennent d'Open Prices, relevés par des milliers de consommateurs. Quand personne n'a relevé un produit près de chez vous, l'app l'estime à partir des prix de chaque enseigne en France."),
