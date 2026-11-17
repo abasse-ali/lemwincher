@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Onglet "Comparer" : recherche de produit (nom ou code-barres) et derniers prix autour de soi.
+/// Onglet "Produits" : rayons, recherche (nom ou code-barres) dans tout le catalogue, suivis, rappels.
 struct SearchView: View {
     @Environment(AppModel.self) private var model
 
@@ -9,6 +9,12 @@ struct SearchView: View {
     @State private var results: [OPProduct] = []
     @State private var searching = false
     @State private var searchError: String? = nil
+    // Catalogue complet (Open Food Facts), page par page.
+    @State private var catalog: [CatalogItem] = []
+    @State private var catalogPage = 0
+    @State private var catalogHasMore = false
+    @State private var catalogLoading = false
+    @State private var catalogTotal = 0
     @State private var recent: [PriceObservation] = []
     @State private var recentLoading = false
     @State private var showScanner = false
@@ -24,7 +30,7 @@ struct SearchView: View {
                     searchContent
                 }
             }
-            .navigationTitle("Comparer")
+            .navigationTitle("Produits")
             .searchable(text: $query, prompt: "Produit, marque ou code-barres")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -44,6 +50,7 @@ struct SearchView: View {
             .task(id: query) { await search() }
             .task(id: model.locationKey) {
                 await loadRecent()
+                await model.enrichProducts()
                 await refreshWatchlistIfNeeded()
                 await model.refreshRecalls()
                 await model.checkRecalls(for: model.state.recentProducts.map(\.code) + model.state.watchlist.map(\.id))
@@ -139,6 +146,14 @@ struct SearchView: View {
             Text("Scannez ou cherchez un produit pour voir son prix dans chaque magasin autour de vous, du moins cher au plus cher.")
         }
 
+        Section {
+            RayonGrid()
+        } header: {
+            Text("Rayons")
+        } footer: {
+            Text("Des centaines de milliers de produits vendus en France, avec leur photo, leur Nutri-Score et les prix relevés.")
+        }
+
         watchlistSection
 
         recallsSection
@@ -216,12 +231,52 @@ struct SearchView: View {
                     }
                 }
                 if !searching && results.isEmpty && searchError == nil && trimmedQuery.count >= 2 {
-                    Text("Aucun produit avec des prix ne correspond. Essayez un autre mot ou scannez le code-barres.")
+                    Text("Aucun produit avec des prix relevés ne correspond.")
                         .foregroundStyle(.secondary)
                 }
             } header: {
-                Text("Produits avec des prix (Open Prices)")
+                Text("Avec des prix relevés (Open Prices)")
             }
+
+            catalogSection
+        }
+    }
+
+    /// Tous les produits vendus en France qui correspondent (sans ceux déjà listés au-dessus).
+    @ViewBuilder
+    private var catalogSection: some View {
+        let pricedCodes = Set(results.map(\.code))
+        let others = catalog.filter { !pricedCodes.contains($0.id) }
+        Section {
+            if catalogLoading && catalog.isEmpty {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Recherche dans le catalogue…").foregroundStyle(.secondary)
+                }
+            }
+            ForEach(others) { item in
+                NavigationLink(value: item.product) {
+                    CatalogRow(item: item)
+                }
+                .onAppear {
+                    if item.id == others.last?.id { Task { await loadMoreCatalog() } }
+                }
+            }
+            if catalogLoading && !catalog.isEmpty {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                    Spacer()
+                }
+            }
+            if !catalogLoading && catalog.isEmpty && trimmedQuery.count >= 2 {
+                Text("Aucun produit trouvé. Essayez un autre mot ou scannez le code-barres.")
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text(catalogTotal > 0 ? "Tous les produits (\(catalogTotal.formatted()))" : "Tous les produits")
+        } footer: {
+            Text("Catalogue Open Food Facts. Touchez un produit pour voir son prix dans les magasins autour de vous ou l'estimation par enseigne.")
         }
     }
 
@@ -243,6 +298,11 @@ struct SearchView: View {
 
     private func search() async {
         let q = trimmedQuery
+        catalog = []
+        catalogPage = 0
+        catalogHasMore = false
+        catalogTotal = 0
+        catalogLoading = false
         guard q.count >= 2, !q.isBarcodeLike else {
             results = []
             searching = false
@@ -253,16 +313,42 @@ struct SearchView: View {
         searchError = nil
         try? await Task.sleep(for: .milliseconds(450))
         if Task.isCancelled { return }
-        do {
-            let found = try await OpenPricesAPI.searchProducts(q)
-            if Task.isCancelled { return }
+        async let pricedTask = SearchView.searchPriced(q)
+        catalogHasMore = true
+        await loadMoreCatalog()
+        let priced = await pricedTask
+        if Task.isCancelled { return }
+        switch priced {
+        case .success(let found):
             results = found
-        } catch {
-            if error.isCancellation { return }
+        case .failure(let error):
             results = []
             searchError = "Recherche impossible : \(error.localizedDescription)"
         }
         searching = false
+    }
+
+    private static func searchPriced(_ text: String) async -> Result<[OPProduct], Error> {
+        do {
+            return .success(try await OpenPricesAPI.searchProducts(text))
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    /// Page suivante du catalogue complet pour la recherche en cours.
+    private func loadMoreCatalog() async {
+        let q = trimmedQuery
+        guard catalogHasMore, !catalogLoading, q.count >= 2, !q.isBarcodeLike else { return }
+        catalogLoading = true
+        defer { catalogLoading = false }
+        guard let page = try? await CatalogAPI.search(text: q, rayon: nil, page: catalogPage + 1),
+              q == trimmedQuery else { return }
+        let known = Set(catalog.map(\.id))
+        catalog += page.items.filter { !known.contains($0.id) }
+        catalogPage = page.page
+        catalogTotal = page.total
+        catalogHasMore = page.hasMore && !page.items.isEmpty
     }
 
     private func loadRecent() async {

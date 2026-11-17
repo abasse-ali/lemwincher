@@ -111,8 +111,10 @@ struct Product: Identifiable, Codable, Hashable {
     var isCustom: Bool { code.hasPrefix("custom:") }
     var hasDetails: Bool { !name.isEmpty && name != code }
 
-    /// Contenance ramenée au kg ou au litre.
-    var normalizedAmount: UnitAmount? { UnitAmount(quantity: unitQuantity, unit: unitName) }
+    /// Contenance ramenée au kg ou au litre (chiffrée, sinon lue dans le texte "500 g", "6 x 1,5 L"…).
+    var normalizedAmount: UnitAmount? {
+        UnitAmount(quantity: unitQuantity, unit: unitName) ?? UnitAmount.parse(quantity)
+    }
 
     static func custom(named name: String) -> Product {
         Product(code: customCode(for: name), name: name.trimmed)
@@ -148,6 +150,34 @@ struct UnitAmount: Hashable {
         default: return nil
         }
     }
+
+    /// Lit une contenance écrite : "500 g (4 x 125 g)" -> 0,5 kg, "6x1.5L" -> 9 L, "1,5 kg" -> 1,5 kg.
+    static func parse(_ text: String?) -> UnitAmount? {
+        guard let text = text?.trimmed, !text.isEmpty else { return nil }
+        let ns = text as NSString
+        let range = NSRange(location: 0, length: ns.length)
+        if let match = multipackPattern.firstMatch(in: text, range: range),
+           let count = Double(ns.substring(with: match.range(at: 1))),
+           let each = Double(ns.substring(with: match.range(at: 2)).replacingOccurrences(of: ",", with: ".")),
+           count > 0, count < 100,
+           let amount = UnitAmount(quantity: count * each, unit: ns.substring(with: match.range(at: 3))) {
+            return amount
+        }
+        if let match = singlePattern.firstMatch(in: text, range: range),
+           let value = Double(ns.substring(with: match.range(at: 1)).replacingOccurrences(of: ",", with: ".")) {
+            return UnitAmount(quantity: value, unit: ns.substring(with: match.range(at: 2)))
+        }
+        return nil
+    }
+
+    private static let multipackPattern = try! NSRegularExpression(
+        pattern: #"(\d{1,2})\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(kg|g|gr|mg|l|cl|ml|dl)\b"#,
+        options: [.caseInsensitive]
+    )
+    private static let singlePattern = try! NSRegularExpression(
+        pattern: #"(\d+(?:[.,]\d+)?)\s*(kg|g|gr|mg|l|cl|ml|dl)\b"#,
+        options: [.caseInsensitive]
+    )
 
     func unitPrice(_ price: Double) -> Double { price / value }
 
@@ -228,6 +258,11 @@ struct AppSettings: Codable, Hashable {
     var fuelType: FuelType = .gazole
     var hasSeenOnboarding: Bool = false
     var openNowOnly: Bool = false
+    /// Budget courses par période (mois).
+    var budgetAmount: Double = 100
+    /// Jour du mois où le budget repart à zéro (1 = le 1er ; ex. 5 si la paie arrive le 5).
+    var budgetStartDay: Int = 1
+    var budgetAlerts: Bool = true
 
     static let currencies = ["EUR", "KMF", "XOF", "XAF", "MGA", "MUR", "MAD", "DZD", "TND", "CHF", "GBP", "USD", "CAD"]
 
@@ -252,6 +287,9 @@ struct AppSettings: Codable, Hashable {
         fuelType = (try? c.decode(FuelType.self, forKey: .fuelType)) ?? .gazole
         hasSeenOnboarding = (try? c.decode(Bool.self, forKey: .hasSeenOnboarding)) ?? false
         openNowOnly = (try? c.decode(Bool.self, forKey: .openNowOnly)) ?? false
+        budgetAmount = (try? c.decode(Double.self, forKey: .budgetAmount)) ?? 100
+        budgetStartDay = (try? c.decode(Int.self, forKey: .budgetStartDay)) ?? 1
+        budgetAlerts = (try? c.decode(Bool.self, forKey: .budgetAlerts)) ?? true
     }
 }
 
@@ -262,6 +300,7 @@ struct PersistedState: Codable, Equatable {
     var shoppingList: [ShoppingItem] = []
     var recentProducts: [Product] = []
     var watchlist: [WatchItem] = []
+    var expenses: [Expense] = []
 
     init() {}
 
@@ -272,10 +311,11 @@ struct PersistedState: Codable, Equatable {
         shoppingList = (try? c.decode([ShoppingItem].self, forKey: .shoppingList)) ?? []
         recentProducts = (try? c.decode([Product].self, forKey: .recentProducts)) ?? []
         watchlist = (try? c.decode([WatchItem].self, forKey: .watchlist)) ?? []
+        expenses = ((try? c.decode([Lossy<Expense>].self, forKey: .expenses)) ?? []).compactMap(\.value)
     }
 }
 
 /// Onglets de l'app (pour y naviguer depuis Siri ou une notification).
 enum AppTab: Hashable {
-    case stores, compare, list, prices, settings
+    case stores, compare, list, budget, settings
 }

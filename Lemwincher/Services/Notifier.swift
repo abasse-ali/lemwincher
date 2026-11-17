@@ -26,10 +26,25 @@ enum Notifier {
         UNUserNotificationCenter.current().add(request) { _ in }
     }
 
+    /// Affiche aussi les notifications quand l'app est ouverte (alertes de budget, baisses de prix).
+    static func showWhileOpen() {
+        UNUserNotificationCenter.current().delegate = ForegroundNotifications.shared
+    }
+
     /// Demande à iOS de relancer l'app en arrière-plan dans quelques heures pour vérifier les prix suivis.
     static func scheduleBackgroundRefresh() {
         let request = BGAppRefreshTaskRequest(identifier: refreshTaskID)
         request.earliestBeginDate = Date(timeIntervalSinceNow: 6 * 3600)
         try? BGTaskScheduler.shared.submit(request)
+    }
+}
+
+final class ForegroundNotifications: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = ForegroundNotifications()
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound])
     }
 }

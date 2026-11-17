@@ -42,7 +42,7 @@ struct PriceObservation: Identifiable, Hashable {
                      lat: lat, lon: lon, priceCount: nil, logoURL: nil)
     }
 
-    var unitAmount: UnitAmount? { UnitAmount(quantity: unitQuantity, unit: unitName) }
+    var unitAmount: UnitAmount? { UnitAmount(quantity: unitQuantity, unit: unitName) ?? UnitAmount.parse(quantity) }
 
     var unitPriceText: String? { unitAmount?.unitPriceText(price, currency: currency) }
 
@@ -341,7 +341,8 @@ enum PriceEngine {
     static func cheaperAlternatives(observations: [PriceObservation],
                                     excluding code: String,
                                     unit: String,
-                                    below reference: Double?) -> [CheaperAlternative] {
+                                    below reference: Double?,
+                                    limit: Int = 8) -> [CheaperAlternative] {
         var bestByProduct: [String: CheaperAlternative] = [:]
         for obs in observations where obs.productCode != code && !obs.isDiscounted {
             guard let amount = obs.unitAmount, amount.unit == unit else { continue }
@@ -354,6 +355,6 @@ enum PriceEngine {
         if let reference {
             list = list.filter { $0.unitPrice < reference }
         }
-        return Array(list.sorted { $0.unitPrice < $1.unitPrice }.prefix(8))
+        return Array(list.sorted { $0.unitPrice < $1.unitPrice }.prefix(limit))
     }
 }

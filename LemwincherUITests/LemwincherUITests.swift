@@ -148,14 +148,28 @@ final class LemwincherUITests: XCTestCase {
             goBack(app)
         }
 
-        // 2. Comparer : produits suivis, rappels, produits consultés.
-        tab(app, "Comparer")
+        // 2. Produits : rayons, suivis, rappels, consultés, recherche dans tout le catalogue.
+        tab(app, "Produits")
         sleep(6)
-        snapshot("08-comparer")
+        snapshot("08-produits")
+
+        let dairies = element(app, "rayon-en:dairies")
+        if dairies.waitForExistence(timeout: 10) {
+            dairies.tap()
+            sleep(10)
+            snapshot("08b-rayon-produits-laitiers")
+            let cheapest = app.buttons["Moins chers"]
+            if cheapest.waitForExistence(timeout: 5) {
+                cheapest.tap()
+                sleep(10)
+                snapshot("08c-rayon-moins-chers-au-kilo")
+            }
+            goBack(app)
+        }
 
         let recent = element(app, "recentProduct")
+        reveal(recent, in: app)
         if recent.waitForExistence(timeout: 10) {
-            if !recent.isHittable { app.swipeUp() }
             recent.tap()
             sleep(10)
             snapshot("09-comparatif-produit")
@@ -169,12 +183,25 @@ final class LemwincherUITests: XCTestCase {
         }
 
         let recalls = element(app, "recallsLink")
+        if !recalls.exists { scrollDown(until: recalls, in: app) }
+        reveal(recalls, in: app)
         if recalls.waitForExistence(timeout: 10) {
-            if !recalls.isHittable { app.swipeDown() }
             recalls.tap()
             sleep(6)
             snapshot("12-rappels")
             goBack(app)
+        }
+
+        let search = app.searchFields.firstMatch
+        scrollDown(until: search, in: app)
+        if search.waitForExistence(timeout: 5) {
+            search.tap()
+            search.typeText("yaourt nature")
+            sleep(10)
+            snapshot("12b-recherche-catalogue")
+            app.swipeUp()
+            sleep(4)
+            snapshot("12c-recherche-plus-de-produits")
         }
 
         // 3. Ma liste : ajout rapide et magasin le moins cher.
@@ -191,17 +218,60 @@ final class LemwincherUITests: XCTestCase {
         sleep(1)
         snapshot("14-ma-liste-magasins")
 
-        // 4. Mes prix : statistiques et évolution.
-        tab(app, "Mes prix")
+        // 4. Budget : jauge, nouvelle dépense, graphique, mes relevés de prix.
+        tab(app, "Budget")
         sleep(2)
-        snapshot("15-mes-prix")
+        snapshot("15-budget")
+
+        let addExpense = element(app, "addExpenseButton")
+        if addExpense.waitForExistence(timeout: 5) {
+            addExpense.tap()
+            let amount = app.textFields["expenseAmount"]
+            if amount.waitForExistence(timeout: 5) {
+                amount.tap()
+                amount.typeText("18.60")
+                sleep(1)
+                snapshot("16-nouvelle-depense")
+                let save = app.navigationBars.buttons["Enregistrer"]
+                if save.exists { save.tap() }
+                sleep(2)
+                snapshot("16b-budget-apres-depense")
+                // Alerte « 80 % du budget atteint » éventuelle.
+                let ok = app.alerts.buttons["OK"]
+                if ok.waitForExistence(timeout: 2) { ok.tap() }
+            }
+        }
+        app.swipeUp()
+        sleep(1)
+        snapshot("16c-budget-graphiques")
+        app.swipeUp()
+        sleep(1)
+        snapshot("16d-budget-historique")
+
+        let myPrices = element(app, "myPricesLink")
+        reveal(myPrices, in: app)
+        if myPrices.waitForExistence(timeout: 5) {
+            myPrices.tap()
+            sleep(2)
+            snapshot("17-mes-prix")
+            goBack(app)
+        }
 
         // 5. Réglages.
         tab(app, "Réglages")
         sleep(1)
-        snapshot("16-reglages")
+        snapshot("18-reglages")
         app.swipeUp()
         sleep(1)
-        snapshot("17-reglages-suite")
+        snapshot("18b-reglages-suite")
+    }
+
+    /// Fait défiler doucement vers le bas jusqu'à ce que l'élément soit visible et touchable.
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication, swipes: Int = 6) {
+        var count = 0
+        while (!element.exists || !element.isHittable) && count < swipes {
+            app.collectionViews.firstMatch.swipeUp(velocity: .slow)
+            count += 1
+        }
     }
 }

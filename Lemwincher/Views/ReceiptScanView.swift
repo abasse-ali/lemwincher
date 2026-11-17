@@ -14,6 +14,10 @@ struct ReceiptScanView: View {
     @State private var date = Date()
     @State private var message: String? = nil
     @State private var storeHint: String? = nil
+    @State private var addToBudget = true
+
+    /// Montant du ticket : le total lu, sinon la somme des articles cochés.
+    private var receiptAmount: Double { detectedTotal ?? includedTotal }
 
     private var storeChoices: [Store] { model.storesByDistance() }
 
@@ -33,6 +37,14 @@ struct ReceiptScanView: View {
                 } else {
                     storeSection
                     itemsSection
+                    Section {
+                        Toggle(isOn: $addToBudget) {
+                            Label("Ajouter \(Fmt.price(receiptAmount, model.settings.currency)) au budget du mois",
+                                  systemImage: "eurosign.circle")
+                        }
+                    } footer: {
+                        Text("La dépense apparaîtra dans l'onglet Budget.")
+                    }
                     Section {
                         Button {
                             showCamera = true
@@ -87,7 +99,7 @@ struct ReceiptScanView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Label("Ajoutez tous les prix d'un coup", systemImage: "doc.text.viewfinder")
                     .font(.headline)
-                Text("Photographiez votre ticket de caisse bien à plat, en entier et bien éclairé. Lemwincher lit les articles et leurs prix ; vous vérifiez, puis tout est ajouté à « Mes prix » pour comparer lors de vos prochaines courses.")
+                Text("Photographiez votre ticket de caisse bien à plat, en entier et bien éclairé. Lemwincher lit les articles et leurs prix ; vous vérifiez, puis les prix sont ajoutés à « Mes prix » et le montant à votre budget du mois.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Button {
@@ -182,6 +194,16 @@ struct ReceiptScanView: View {
                                      price: item.price,
                                      currency: model.settings.currency,
                                      date: date))
+        }
+        if addToBudget && receiptAmount > 0 {
+            model.addExpense(Expense(amount: (receiptAmount * 100).rounded() / 100,
+                                     date: date,
+                                     storeName: store.name,
+                                     storeID: store.id,
+                                     chainKey: store.chainKey,
+                                     category: .groceries,
+                                     note: "Ticket de caisse",
+                                     itemCount: includedItems.reduce(0) { $0 + $1.quantity }))
         }
         dismiss()
     }

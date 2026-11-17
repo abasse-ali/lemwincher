@@ -5,6 +5,10 @@ struct LemwincherApp: App {
     private let model = AppModel.shared
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        Notifier.showWhileOpen()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

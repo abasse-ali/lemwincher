@@ -10,15 +10,15 @@ struct ContentView: View {
                 .tabItem { Label("Autour de moi", systemImage: "map.fill") }
                 .tag(AppTab.stores)
             SearchView()
-                .tabItem { Label("Comparer", systemImage: "magnifyingglass") }
+                .tabItem { Label("Produits", systemImage: "basket.fill") }
                 .tag(AppTab.compare)
             ShoppingListView()
                 .tabItem { Label("Ma liste", systemImage: "cart.fill") }
                 .badge(model.state.shoppingList.filter { !$0.checked }.count)
                 .tag(AppTab.list)
-            MyPricesView()
-                .tabItem { Label("Mes prix", systemImage: "tag.fill") }
-                .tag(AppTab.prices)
+            BudgetView()
+                .tabItem { Label("Budget", systemImage: "eurosign.circle.fill") }
+                .tag(AppTab.budget)
             SettingsView()
                 .tabItem { Label("Réglages", systemImage: "gearshape.fill") }
                 .tag(AppTab.settings)

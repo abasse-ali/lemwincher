@@ -84,6 +84,9 @@ extension View {
             .navigationDestination(for: Product.self) { product in
                 ProductCompareView(product: product)
             }
+            .navigationDestination(for: Rayon.self) { rayon in
+                RayonView(rayon: rayon)
+            }
     }
 }
 
@@ -169,7 +172,9 @@ struct GradeBadge: View {
     let title: String
     let grade: String
 
-    private var color: Color {
+    private var color: Color { GradeBadge.color(for: grade) }
+
+    static func color(for grade: String) -> Color {
         switch grade.lowercased() {
         case "a": return Color(red: 0.0, green: 0.52, blue: 0.25)
         case "b": return Color(red: 0.52, green: 0.74, blue: 0.17)

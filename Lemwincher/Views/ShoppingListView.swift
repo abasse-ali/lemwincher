@@ -12,6 +12,7 @@ struct ShoppingListView: View {
     @State private var showCustomAlert = false
     @State private var customName = ""
     @State private var quickAdd = ""
+    @State private var showShoppingDone = false
 
     /// Change quand la liste de produits ou la zone change : relance la comparaison.
     private var listKey: String {
@@ -80,12 +81,13 @@ struct ShoppingListView: View {
         NavigationStack {
             List {
                 quickAddSection
+                budgetSection
                 recallSection
                 if model.state.shoppingList.isEmpty {
                     ContentUnavailableView {
                         Label("Votre liste est vide", systemImage: "cart")
                     } description: {
-                        Text("Tapez un produit ci-dessus, ou ajoutez-le depuis l'onglet Comparer (bouton « Ajouter à ma liste »). Lemwincher vous dira où faire vos courses pour payer le moins cher.")
+                        Text("Tapez un produit ci-dessus, ou ajoutez-le depuis l'onglet Produits (bouton « Ajouter à ma liste »). Lemwincher vous dira où faire vos courses pour payer le moins cher.")
                     } actions: {
                         Button("Produit sans code-barres") { showCustomAlert = true }
                             .buttonStyle(.bordered)
@@ -122,6 +124,11 @@ struct ShoppingListView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button {
+                            showShoppingDone = true
+                        } label: {
+                            Label("J'ai fait mes courses…", systemImage: "eurosign.circle")
+                        }
+                        Button {
                             showCustomAlert = true
                         } label: {
                             Label("Produit sans code-barres", systemImage: "text.badge.plus")
@@ -148,12 +155,88 @@ struct ShoppingListView: View {
             } message: {
                 Text("Fruits, légumes, vrac… Utilisez le même nom quand vous relevez son prix dans « Mes prix ».")
             }
+            .sheet(isPresented: $showShoppingDone) {
+                shoppingDoneEditor
+            }
             .task(id: listKey) {
                 await model.checkRecalls(for: model.state.shoppingList.map(\.product.code))
                 await loadPrices()
+                await model.enrichProducts()
             }
             .refreshable { await loadPrices() }
             .appDestinations()
+        }
+    }
+
+    // MARK: Budget
+
+    /// Budget restant du mois, et ce que coûterait la liste au meilleur magasin.
+    @ViewBuilder
+    private var budgetSection: some View {
+        let summary = model.budgetSummary
+        let currency = model.settings.currency
+        let best = model.state.shoppingList.isEmpty ? nil : basket.stores.first
+        Section {
+            Button {
+                model.selectedTab = .budget
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "eurosign.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(summary.status == .ok ? Color.brand : (summary.status == .warning ? Color.orange : Color.red))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(summary.remaining >= 0
+                             ? "Budget : il reste \(Fmt.price(summary.remaining, currency)) ce mois-ci"
+                             : "Budget dépassé de \(Fmt.price(-summary.remaining, currency))")
+                            .font(.subheadline.weight(.semibold))
+                        if let best {
+                            Text(basketBudgetText(best: best, remaining: summary.remaining, currency: currency))
+                                .font(.caption)
+                                .foregroundStyle(best.total <= summary.remaining ? Color.secondary : Color.orange)
+                        } else {
+                            Text("\(Fmt.price(summary.dailyAllowance, currency)) par jour jusqu'à la fin du mois")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("listBudget")
+        }
+    }
+
+    private func basketBudgetText(best: StoreBasket, remaining: Double, currency: String) -> String {
+        let total = (best.estimateCount > 0 ? "≈ " : "") + Fmt.price(best.total, currency)
+        if best.total <= remaining {
+            return "Ce panier (\(total) chez \(best.storeName)) rentre dans votre budget."
+        }
+        return "Ce panier (\(total) chez \(best.storeName)) dépasse le budget restant de \(Fmt.price(best.total - remaining, currency))."
+    }
+
+    /// « J'ai fait mes courses » : dépense pré-remplie avec le meilleur magasin et son total.
+    private var shoppingDoneEditor: some View {
+        let best = basket.stores.first
+        let checked = model.state.shoppingList.filter(\.checked).count
+        let prefill = Expense(amount: ((best?.total ?? 0) * 100).rounded() / 100,
+                              date: Date(),
+                              storeName: best?.store?.name ?? best?.storeName,
+                              storeID: best?.store?.id,
+                              chainKey: best?.store?.chainKey,
+                              category: .groceries,
+                              note: "Liste de courses",
+                              itemCount: checked > 0 ? checked : model.state.shoppingList.count)
+        let label = checked > 0
+            ? "Retirer les \(checked) produit\(checked > 1 ? "s" : "") coché\(checked > 1 ? "s" : "") de la liste"
+            : "Vider la liste de courses"
+        return ExpenseEditor(expense: nil, prefill: prefill, clearOptionLabel: label) {
+            if model.state.shoppingList.contains(where: \.checked) {
+                model.state.shoppingList.removeAll(where: \.checked)
+            } else {
+                model.state.shoppingList.removeAll()
+            }
         }
     }
 
@@ -311,7 +394,7 @@ struct ShoppingListView: View {
             } header: {
                 Text("Sans prix connu")
             } footer: {
-                Text("Relevez leur prix lors de vos prochaines courses (onglet « Mes prix ») pour les inclure dans la comparaison.")
+                Text("Relevez leur prix lors de vos prochaines courses (Budget › + › Relever un prix) pour les inclure dans la comparaison.")
             }
         }
     }

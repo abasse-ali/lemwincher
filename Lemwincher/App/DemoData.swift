@@ -45,6 +45,26 @@ enum DemoData {
         state.watchlist = [
             WatchItem(product: nutella, targetPrice: 3.5, bestPrice: 4.15, bestStoreName: store.name, bestDate: now),
         ]
+
+        // Budget de 100 € : quelques dépenses ce mois-ci et le mois dernier.
+        state.settings.budgetAmount = 100
+        let period = BudgetEngine.period(containing: now, startDay: 1)
+        let elapsed = max(Calendar.current.dateComponents([.day], from: period.start, to: now).day ?? 0, 0)
+        func dayInPeriod(_ offset: Int) -> Date {
+            period.start.addingTimeInterval(TimeInterval(min(offset, elapsed)) * day + 11 * 3600)
+        }
+        state.expenses = [
+            Expense(amount: 23.40, date: dayInPeriod(1), storeName: "Carrefour City Capitole", chainKey: "carrefour city",
+                    category: .groceries, itemCount: 9),
+            Expense(amount: 31.85, date: dayInPeriod(6), storeName: "E. Leclerc - Blagnac", chainKey: "e leclerc",
+                    category: .groceries, itemCount: 17),
+            Expense(amount: 8.90, date: dayInPeriod(9), storeName: "Monoprix", chainKey: "monoprix",
+                    category: .household, itemCount: 3),
+            Expense(amount: 96.40, date: period.start.addingTimeInterval(-10 * day), storeName: "Auchan", chainKey: "auchan",
+                    category: .groceries),
+            Expense(amount: 24.10, date: period.start.addingTimeInterval(-25 * day), storeName: "Lidl", chainKey: "lidl",
+                    category: .groceries),
+        ]
         return state
     }
 }

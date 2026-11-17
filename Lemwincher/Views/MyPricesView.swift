@@ -1,8 +1,8 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Onglet "Mes prix" : les prix que j'ai relevés en magasin, et leur évolution.
-struct MyPricesView: View {
+/// "Mes prix" (dans l'onglet Budget) : les prix que j'ai relevés en magasin, et leur évolution.
+struct MyPricesContent: View {
     @Environment(AppModel.self) private var model
     @State private var showAddPrice = false
     @State private var showReceipt = false
@@ -19,8 +19,7 @@ struct MyPricesView: View {
 
     var body: some View {
         let entries = self.entries
-        NavigationStack {
-            List {
+        List {
                 if model.state.myPrices.isEmpty {
                     ContentUnavailableView {
                         Label("Aucun prix relevé", systemImage: "tag")
@@ -55,17 +54,16 @@ struct MyPricesView: View {
                 }
             }
             .navigationTitle("Mes prix")
+            .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $filter, prompt: "Produit ou magasin")
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
                     if !model.state.myPrices.isEmpty {
                         ShareLink(item: CSVExport(text: Backup.csv(model.state.myPrices)),
                                   preview: SharePreview("Mes relevés de prix (CSV)")) {
                             Image(systemName: "square.and.arrow.up")
                         }
                     }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button {
                             showAddPrice = true
@@ -89,8 +87,6 @@ struct MyPricesView: View {
             .sheet(isPresented: $showReceipt) {
                 ReceiptScanView()
             }
-            .appDestinations()
-        }
     }
 
     // MARK: Statistiques

@@ -53,8 +53,54 @@ struct OpenCompareIntent: AppIntent {
     }
 }
 
+/// « Dis Siri, combien il me reste Lemwincher » : budget restant du mois.
+struct BudgetStatusIntent: AppIntent {
+    static var title: LocalizedStringResource = "Budget courses restant"
+    static var description = IntentDescription("Indique combien il reste sur le budget courses du mois.")
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let model = AppModel.shared
+        let summary = model.budgetSummary
+        let currency = model.settings.currency
+        let message: String
+        if summary.remaining >= 0 {
+            message = "Il vous reste \(Fmt.price(summary.remaining, currency)) sur \(Fmt.price(summary.budget, currency)) pour \(summary.daysLeft) jours, soit \(Fmt.price(summary.dailyAllowance, currency)) par jour."
+        } else {
+            message = "Votre budget de \(Fmt.price(summary.budget, currency)) est dépassé de \(Fmt.price(-summary.remaining, currency)) ce mois-ci."
+        }
+        return .result(dialog: "\(message)")
+    }
+}
+
+/// Ouvre l'app sur le budget.
+struct OpenBudgetIntent: AppIntent {
+    static var title: LocalizedStringResource = "Ouvrir mon budget"
+    static var description = IntentDescription("Affiche le budget courses du mois.")
+    static var openAppWhenRun: Bool = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        AppModel.shared.selectedTab = .budget
+        return .result()
+    }
+}
+
 struct LemwincherShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
+        AppShortcut(intent: BudgetStatusIntent(),
+                    phrases: [
+                        "Combien il me reste \(.applicationName)",
+                        "Mon budget \(.applicationName)",
+                    ],
+                    shortTitle: "Budget restant",
+                    systemImageName: "eurosign.circle")
+        AppShortcut(intent: OpenBudgetIntent(),
+                    phrases: [
+                        "Ouvre mon budget \(.applicationName)",
+                    ],
+                    shortTitle: "Mon budget",
+                    systemImageName: "chart.pie")
         AppShortcut(intent: AddToShoppingListIntent(),
                     phrases: [
                         "Ajoute à ma liste \(.applicationName)",

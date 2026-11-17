@@ -44,6 +44,9 @@ final class AppModel {
     // Produits suivis
     var watchChecking = false
 
+    // Budget : message affiché après une dépense qui franchit 80 % ou 100 % du budget.
+    var budgetAlert: String?
+
     let locationManager = LocationManager()
     let account = OpenPricesAccount()
     /// Lancé par les tests d'interface : données de démonstration à Toulouse, pas de GPS.
@@ -54,6 +57,7 @@ final class AppModel {
     @ObservationIgnored private var departmentKey: String?
     @ObservationIgnored private var recallsLoadedKey: String?
     @ObservationIgnored private var checkedRecallCodes: Set<String> = []
+    @ObservationIgnored private var enrichedCodes: Set<String> = []
 
     init(arguments: [String] = ProcessInfo.processInfo.arguments) {
         isUITest = arguments.contains("-uitest")
@@ -408,6 +412,84 @@ final class AppModel {
             }
         }
         return drops
+    }
+
+    // MARK: Budget
+
+    var budgetSummary: BudgetSummary {
+        BudgetEngine.summary(expenses: state.expenses,
+                             budget: state.settings.budgetAmount,
+                             startDay: state.settings.budgetStartDay)
+    }
+
+    /// Ajoute une dépense ; prévient si elle fait franchir 80 % ou 100 % du budget du mois.
+    func addExpense(_ expense: Expense) {
+        let before = budgetSummary
+        state.expenses.append(expense)
+        guard before.period.contains(expense.date) else { return }
+        let after = budgetSummary
+        guard let threshold = BudgetEngine.thresholdCrossed(before: before.spent, after: after.spent,
+                                                            budget: after.budget) else { return }
+        let currency = state.settings.currency
+        let message = threshold >= 100
+            ? "Budget du mois dépassé : \(Fmt.price(after.spent, currency)) dépensés sur \(Fmt.price(after.budget, currency))."
+            : "80 % du budget atteint : il reste \(Fmt.price(after.remaining, currency)) pour \(after.daysLeft) jour\(after.daysLeft > 1 ? "s" : "")."
+        budgetAlert = message
+        if state.settings.budgetAlerts && !isUITest {
+            Notifier.notify(title: "Budget courses", body: message, id: "budget-\(threshold)")
+        }
+    }
+
+    func updateExpense(_ expense: Expense) {
+        guard let index = state.expenses.firstIndex(where: { $0.id == expense.id }) else { return }
+        state.expenses[index] = expense
+    }
+
+    func deleteExpenses(ids: Set<UUID>) {
+        state.expenses.removeAll { ids.contains($0.id) }
+    }
+
+    /// Économie possible ce mois-ci en allant dans l'enseigne la moins chère du quartier.
+    var savingsTip: SavingsTip? {
+        BudgetEngine.savingsTip(expenses: budgetSummary.expenses, report: chainIndex, nearbyChains: nearestStoreByChain)
+    }
+
+    // MARK: Photos et fiches des produits
+
+    /// Complète (photo, marque, contenance) les produits de la liste, des suivis et des consultés récemment.
+    @MainActor
+    func enrichProducts() async {
+        let products = state.shoppingList.map(\.product) + state.watchlist.map(\.product) + state.recentProducts
+        let pending = products.filter { !$0.isCustom && $0.imageURL == nil && !enrichedCodes.contains($0.code) }
+        var seen = Set<String>()
+        for product in pending where seen.insert(product.code).inserted {
+            enrichedCodes.insert(product.code)
+            guard let found = await ProductLookup.lookup(code: product.code) else { continue }
+            apply(details: found)
+        }
+    }
+
+    private func apply(details found: Product) {
+        func merged(_ product: Product) -> Product {
+            var p = product
+            if !p.hasDetails { p.name = found.name }
+            p.brand = p.brand ?? found.brand
+            p.quantity = p.quantity ?? found.quantity
+            p.imageURL = p.imageURL ?? found.imageURL
+            p.unitQuantity = p.unitQuantity ?? found.unitQuantity
+            p.unitName = p.unitName ?? found.unitName
+            p.categories = p.categories ?? found.categories
+            return p
+        }
+        for i in state.shoppingList.indices where state.shoppingList[i].product.code == found.code {
+            state.shoppingList[i].product = merged(state.shoppingList[i].product)
+        }
+        for i in state.watchlist.indices where state.watchlist[i].product.code == found.code {
+            state.watchlist[i].product = merged(state.watchlist[i].product)
+        }
+        for i in state.recentProducts.indices where state.recentProducts[i].code == found.code {
+            state.recentProducts[i] = merged(state.recentProducts[i])
+        }
     }
 
     // MARK: Mes prix

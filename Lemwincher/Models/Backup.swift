@@ -14,8 +14,9 @@ enum Backup {
         var listItems = 0
         var favorites = 0
         var watched = 0
+        var expenses = 0
 
-        var isEmpty: Bool { prices + listItems + favorites + watched == 0 }
+        var isEmpty: Bool { prices + listItems + favorites + watched + expenses == 0 }
 
         var text: String {
             if isEmpty { return "Rien de nouveau : tout était déjà dans l'app." }
@@ -24,6 +25,7 @@ enum Backup {
             if listItems > 0 { parts.append("\(listItems) produit\(listItems > 1 ? "s" : "") de liste") }
             if favorites > 0 { parts.append("\(favorites) magasin\(favorites > 1 ? "s" : "") favori\(favorites > 1 ? "s" : "")") }
             if watched > 0 { parts.append("\(watched) produit\(watched > 1 ? "s" : "") suivi\(watched > 1 ? "s" : "")") }
+            if expenses > 0 { parts.append("\(expenses) dépense\(expenses > 1 ? "s" : "")") }
             return "Ajouté : " + parts.joined(separator: ", ") + "."
         }
     }
@@ -74,6 +76,12 @@ enum Backup {
             state.watchlist.append(item)
             watchedCodes.insert(item.id)
             summary.watched += 1
+        }
+
+        let expenseIDs = Set(state.expenses.map(\.id))
+        for expense in incoming.expenses where !expenseIDs.contains(expense.id) {
+            state.expenses.append(expense)
+            summary.expenses += 1
         }
 
         var recentCodes = Set(state.recentProducts.map(\.code))
