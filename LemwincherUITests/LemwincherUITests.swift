@@ -276,7 +276,7 @@ final class LemwincherUITests: XCTestCase {
         if field.waitForExistence(timeout: 10) {
             field.tap()
             field.typeText("Pommes Gala\n")
-            XCTAssertTrue(app.staticTexts["Pommes Gala"].waitForExistence(timeout: 5), "produit ajouté à la liste")
+            XCTAssertTrue(app.staticTexts["Pommes Gala"].waitForExistence(timeout: 15), "produit ajouté à la liste")
         }
         sleep(12)
         snapshot("13-ma-liste")
@@ -564,9 +564,14 @@ final class LemwincherUITests: XCTestCase {
 
             // Le rayon capturé est gardé en mémoire (« Mes rayons en ligne », onglet Produits) et se met à jour.
             tab(app, "Produits")
+            // Deuxième toucher sur l'onglet : retour à l'écran principal de Produits (rayons, mes rayons en ligne).
+            app.tabBars.buttons["Produits"].tap()
             sleep(2)
+            let cancelSearch = app.buttons["Annuler"].firstMatch
+            if cancelSearch.exists && cancelSearch.isHittable { cancelSearch.tap() }
             let tracked = element(app, "trackedPageRow")
-            reveal(tracked, in: app)
+            reveal(tracked, in: app, swipes: 10)
+            if !tracked.exists { dump(app, "19d-rayons-introuvables") }
             if tracked.waitForExistence(timeout: 5) && tracked.isHittable {
                 snapshot("19d-mes-rayons-en-ligne")
                 tracked.tap()

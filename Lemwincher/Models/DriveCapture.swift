@@ -71,6 +71,9 @@ struct DriveSite: Identifiable, Hashable {
         DriveSite(id: "naturalia", name: "Naturalia", chainPrefix: "naturalia",
                   home: "https://www.naturalia.fr", searchTemplate: "https://www.naturalia.fr/catalogsearch/result/?q={q}",
                   choosesStore: false),
+        // Biocoop : les prix n'apparaissent qu'une fois le magasin choisi sur le site.
+        DriveSite(id: "biocoop", name: "Biocoop", chainPrefix: "biocoop",
+                  home: "https://www.biocoop.fr", searchTemplate: "https://www.biocoop.fr/catalogsearch/result/?q={q}"),
         DriveSite(id: "lavieclaire", name: "La Vie Claire", chainPrefix: "la vie claire",
                   home: "https://www.lavieclaire.com", searchTemplate: "https://www.lavieclaire.com/?s={q}",
                   choosesStore: false),
