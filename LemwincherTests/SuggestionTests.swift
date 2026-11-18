@@ -117,6 +117,55 @@ final class SuggestionTests: XCTestCase {
         XCTAssertEqual(PriceEngine.basket(items: [generic], localByCode: local, estimatesByCode: [:], candidates: [store]).unknown.count, 1)
     }
 
+    func testPersonalPricesAppearUnderTheListItem() throws {
+        let home = CLLocation(latitude: 43.6045, longitude: 1.4433)
+        let aldi = Fixtures.store("NODE:7", name: "Aldi Minimes", brand: "Aldi", lat: 43.62, lon: 1.43)
+        let aldiParis = Fixtures.store("NODE:8", name: "Aldi Paris", brand: "Aldi", lat: 48.85, lon: 2.35)
+        let eggs = CapturedPrice(name: "6 œufs bio de poules élevées en plein air", price: 2.29, brand: "PICOTA®").product
+        var captured = MyPrice(product: eggs, store: aldi, price: 2.29, currency: "EUR", date: Fixtures.day(5))
+        captured.source = "site Aldi"
+        let older = MyPrice(product: eggs, store: aldi, price: 2.49, currency: "EUR", date: Fixtures.day(1))
+        let paris = MyPrice(product: eggs, store: aldiParis, price: 1.99, currency: "EUR", date: Fixtures.day(6))
+        let butter = MyPrice(product: .custom(named: "Beurre doux"), store: aldi, price: 2.35, currency: "EUR", date: Fixtures.day(5))
+        let dollars = MyPrice(product: .custom(named: "Œufs US"), store: aldi, price: 3, currency: "USD", date: Fixtures.day(5))
+
+        let found = SuggestionEngine.personal([captured, older, paris, butter, dollars], query: "Œufs",
+                                              reference: home, radiusMeters: 8000, currency: "EUR")
+        XCTAssertEqual(found.map(\.product.name), ["6 œufs bio de poules élevées en plein air"], "ni le beurre ni les prix en dollars")
+        let offer = try XCTUnwrap(found.first?.offer)
+        XCTAssertEqual(offer.price, 2.29, accuracy: 1e-9, "dernier prix du magasin du quartier, pas le prix de Paris ni l'ancien")
+        XCTAssertEqual(offer.storeName, "Aldi Minimes")
+        XCTAssertEqual(offer.source, "site Aldi")
+        XCTAssertTrue(offer.isLocal)
+
+        // Loin de tout magasin relevé : le prix le plus bas, marqué comme non local.
+        let lyon = CLLocation(latitude: 45.76, longitude: 4.83)
+        let far = try XCTUnwrap(SuggestionEngine.personal([captured, paris], query: "oeuf", reference: lyon,
+                                                          radiusMeters: 8000, currency: "EUR").first?.offer)
+        XCTAssertEqual(far.price, 1.99, accuracy: 1e-9)
+        XCTAssertFalse(far.isLocal)
+        XCTAssertEqual(SuggestionEngine.personal([butter], query: "Œufs", reference: home, radiusMeters: 8000,
+                                                 currency: "EUR").count, 0)
+        XCTAssertEqual(SuggestionEngine.personal([older], query: "Œufs", reference: home, radiusMeters: 8000,
+                                                 currency: "EUR").first?.offer?.source, "votre relevé")
+    }
+
+    func testMergeKeepsTheCheapestRealPriceForEachProduct() {
+        func suggestion(_ code: String, _ price: Double?, store: String = "Open Prices") -> ProductSuggestion {
+            ProductSuggestion(product: Product(code: code, name: code),
+                              offer: price.map { PriceOffer(price: $0, currency: "EUR", storeName: store, distance: nil,
+                                                            date: Fixtures.day(0), isLocal: true) },
+                              nutriScore: nil)
+        }
+        let personal = [suggestion("A", 2.10, store: "Moi"), suggestion("B", 3.00, store: "Moi")]
+        let remote = [suggestion("A", 2.40), suggestion("B", 2.50), suggestion("C", 1.00), suggestion("D", nil), suggestion("A", nil)]
+        let merged = SuggestionEngine.merge(personal: personal, remote: remote)
+        XCTAssertEqual(merged.map(\.id), ["C", "A", "B", "D"], "les prix d'abord, du moins cher au plus cher, puis le catalogue")
+        XCTAssertEqual(merged[1].offer?.storeName, "Moi", "votre prix, moins cher")
+        XCTAssertEqual(merged[2].offer?.storeName, "Open Prices", "le prix d'Open Prices, moins cher")
+        XCTAssertEqual(SuggestionEngine.merge(personal: [], remote: remote).count, 4)
+    }
+
     func testOldListItemsDecodeWithoutChoice() throws {
         let json = #"{"id": "6F9619FF-8B86-D011-B42D-00C04FC964FF", "product": {"code": "custom:oeufs", "name": "Œufs"}, "quantity": 1, "checked": false}"#
         let item = try JSONDecoder().decode(ShoppingItem.self, from: Fixtures.json(json))

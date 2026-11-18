@@ -16,6 +16,13 @@ struct ShoppingListView: View {
     @State private var path = NavigationPath()
     /// Articles dépliés (produits précis affichés en dessous).
     @State private var expanded: Set<UUID> = []
+    /// Article cherché sur le site d'une enseigne (navigateur intégré).
+    @State private var captureRequest: CaptureRequest?
+
+    struct CaptureRequest: Identifiable {
+        let query: String
+        var id: String { query }
+    }
 
     /// Déplier un article lance la recherche de ses produits précis.
     private func expansion(for item: ShoppingItem) -> Binding<Bool> {
@@ -116,9 +123,9 @@ struct ShoppingListView: View {
                     Section {
                         ForEach($bindable.state.shoppingList) { $item in
                             DisclosureGroup(isExpanded: expansion(for: item)) {
-                                ProductChoicesView(item: item) { product in
-                                    path.append(product)
-                                }
+                                ProductChoicesView(item: item,
+                                                   onOpen: { product in path.append(product) },
+                                                   onCapture: { query in captureRequest = CaptureRequest(query: query) })
                             } label: {
                                 ShoppingRow(item: $item)
                             }
@@ -188,6 +195,11 @@ struct ShoppingListView: View {
             }
             .sheet(isPresented: $showShoppingDone) {
                 shoppingDoneEditor
+            }
+            .sheet(item: $captureRequest) { request in
+                // Le site de l'enseigne la plus proche s'ouvre directement sur le produit.
+                DriveCaptureView(query: request.query,
+                                 preferredChain: DriveSite.nearest(in: model.storesByDistance())?.chainPrefix)
             }
             .task(id: listKey) {
                 await model.checkRecalls(for: model.state.shoppingList.map(\.pricedProduct.code))
@@ -535,12 +547,15 @@ struct ProductChoicesView: View {
     let item: ShoppingItem
     /// Ouvre le comparatif d'un produit.
     let onOpen: (Product) -> Void
+    /// Ouvre le site d'une enseigne sur ce produit (pour capturer ses prix).
+    var onCapture: ((String) -> Void)? = nil
 
     /// Ce qu'on cherche : le nom noté par l'utilisateur.
     private var query: String { item.product.name }
 
     var body: some View {
         let results = model.suggestionResults(for: query)
+        let items = SuggestionEngine.merge(personal: model.personalSuggestions(for: query), remote: results.items)
         Group {
             if let choice = item.choice {
                 Button {
@@ -575,12 +590,12 @@ struct ProductChoicesView: View {
                     .controlSize(.small)
                 }
             }
-            if results.loaded && results.items.isEmpty && !results.pricesUnavailable {
+            if results.loaded && items.isEmpty && !results.pricesUnavailable {
                 Text("Aucun produit trouvé pour « \(query) ».")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
-            ForEach(results.items) { suggestion in
+            ForEach(items) { suggestion in
                 SuggestionRow(suggestion: suggestion,
                               chosen: item.choice?.code == suggestion.product.code,
                               onChoose: {
@@ -606,6 +621,16 @@ struct ProductChoicesView: View {
                 .disabled(results.loading)
                 .accessibilityIdentifier("moreSuggestions")
             }
+            if let onCapture, results.loaded {
+                Button {
+                    onCapture(query)
+                } label: {
+                    Label("Prix du jour sur le site d'une enseigne (Aldi, Leclerc…)", systemImage: "safari")
+                        .font(.subheadline)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("captureFromSite")
+            }
         }
     }
 }
@@ -622,7 +647,7 @@ struct SuggestionRow: View {
         guard let offer = suggestion.offer else { return nil }
         let distance: String? = offer.distance.flatMap { $0 < 100_000 ? Fmt.distance($0) : nil }
         let place = offer.isLocal ? offer.storeName : "relevé chez \(offer.storeName)"
-        return Fmt.join(place, distance, Fmt.day(offer.date), Fmt.isOld(offer.date) ? "ancien relevé" : nil)
+        return Fmt.join(place, distance, offer.source, Fmt.day(offer.date), Fmt.isOld(offer.date) ? "ancien relevé" : nil)
     }
 
     var body: some View {

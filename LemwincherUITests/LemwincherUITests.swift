@@ -297,6 +297,47 @@ final class LemwincherUITests: XCTestCase {
         app.swipeUp()
         sleep(1)
         snapshot("18b-reglages-suite")
+
+        // 6. En dernier (dépend du vrai site aldi.fr) : capture des prix du site d'Aldi depuis « Ma liste ».
+        captureFromAldi(app)
+    }
+
+    private func captureFromAldi(_ app: XCUIApplication) {
+        tab(app, "Ma liste")
+        sleep(2)
+        let eggs = app.staticTexts["Œufs"].firstMatch
+        scrollDown(until: eggs, in: app)
+        guard eggs.waitForExistence(timeout: 5) else { return }
+        eggs.tap()
+        sleep(3)
+        let open = element(app, "captureFromSite")
+        reveal(open, in: app)
+        guard open.waitForExistence(timeout: 10), open.isHittable else {
+            dump(app, "19-bouton-site-introuvable")
+            return
+        }
+        open.tap()
+        let aldi = element(app, "site-aldi")
+        guard aldi.waitForExistence(timeout: 10) else { return }
+        if !aldi.isHittable { element(app, "siteBar").swipeLeft() }
+        aldi.tap()
+        // Pas de requête pendant le chargement de la page (arbre d'accessibilité du site très lourd).
+        sleep(25)
+        snapshot("19-site-aldi")
+        let capture = app.buttons["Capturer les prix de la page"].firstMatch
+        guard capture.waitForExistence(timeout: 10) else { return }
+        capture.tap()
+        sleep(3)
+        snapshot("19b-prix-captures-aldi")
+        let add = app.navigationBars.buttons["Ajouter"].firstMatch
+        if add.waitForExistence(timeout: 5) && add.isEnabled {
+            add.tap()
+            sleep(3)
+            snapshot("19c-liste-avec-prix-aldi")
+        } else {
+            let close = app.buttons["Annuler"].firstMatch
+            if close.exists { close.tap() }
+        }
     }
 
     /// Fait défiler doucement vers le bas jusqu'à ce que l'élément soit visible et touchable.

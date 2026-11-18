@@ -11,14 +11,18 @@ struct PriceOffer: Hashable {
     let date: Date
     /// Relevé dans un magasin du rayon de recherche (sinon : dans un autre magasin de l'enseigne).
     let isLocal: Bool
+    /// Prix noté par l'utilisateur : d'où il vient ("site Aldi", "votre relevé").
+    var source: String? = nil
 
-    init(price: Double, currency: String, storeName: String, distance: Double?, date: Date, isLocal: Bool) {
+    init(price: Double, currency: String, storeName: String, distance: Double?, date: Date, isLocal: Bool,
+         source: String? = nil) {
         self.price = price
         self.currency = currency
         self.storeName = storeName
         self.distance = distance
         self.date = date
         self.isLocal = isLocal
+        self.source = source
     }
 
     init(_ obs: PriceObservation, reference: CLLocation?, isLocal: Bool) {
@@ -155,6 +159,47 @@ enum SuggestionEngine {
             return PriceOffer(any, reference: reference, isLocal: false)
         }
         return nil
+    }
+
+    /// Produits de « Mes prix » (tickets, étiquettes, sites des enseignes) qui correspondent à l'article,
+    /// avec le prix le plus bas parmi les derniers relevés de chaque magasin (ceux du quartier d'abord).
+    static func personal(_ prices: [MyPrice], query: String, reference: CLLocation?,
+                         radiusMeters: Double, currency: String) -> [ProductSuggestion] {
+        let matching = prices.filter { $0.currency == currency && relevance(name: $0.product.name, query: query) > 0 }
+        var result: [ProductSuggestion] = []
+        for list in Dictionary(grouping: matching, by: \.product.code).values {
+            let latest = Dictionary(grouping: list, by: \.store.id).values.compactMap { entries in
+                entries.max { $0.date < $1.date }
+            }
+            let local = latest.filter { ($0.store.distance(from: reference) ?? 0) <= radiusMeters }
+            guard let best = (local.isEmpty ? latest : local).min(by: { $0.price < $1.price }),
+                  let newest = list.max(by: { $0.date < $1.date }) else { continue }
+            let offer = PriceOffer(price: best.price, currency: best.currency, storeName: best.store.name,
+                                   distance: best.store.distance(from: reference), date: best.date,
+                                   isLocal: !local.isEmpty, source: best.source ?? "votre relevé")
+            result.append(ProductSuggestion(product: newest.product, offer: offer, nutriScore: nil))
+        }
+        return sorted(result)
+    }
+
+    /// Vos prix et ceux d'Open Prices ensemble : pour un même produit, le prix le plus bas
+    /// (le vôtre à égalité) ; les produits avec un prix d'abord, puis le reste du catalogue.
+    static func merge(personal: [ProductSuggestion], remote: [ProductSuggestion]) -> [ProductSuggestion] {
+        var best: [String: ProductSuggestion] = [:]
+        var order: [String] = []
+        for suggestion in personal + remote where suggestion.offer != nil {
+            if let current = best[suggestion.id] {
+                if let new = suggestion.offer, let old = current.offer, new.price < old.price {
+                    best[suggestion.id] = suggestion
+                }
+            } else {
+                best[suggestion.id] = suggestion
+                order.append(suggestion.id)
+            }
+        }
+        let priced = sorted(order.compactMap { best[$0] })
+        let unpriced = remote.filter { $0.offer == nil && best[$0.id] == nil }
+        return priced + unpriced
     }
 
     /// Les produits avec un prix d'abord (du moins cher au plus cher), puis les autres.

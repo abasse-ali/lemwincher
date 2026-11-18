@@ -89,24 +89,34 @@ struct DriveCaptureView: View {
     }
 
     private var siteBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(DriveSite.all) { item in
-                    Button {
-                        site = item
-                    } label: {
-                        Text(item.name)
-                            .font(.subheadline.weight(.semibold))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(item == site ? Color.brand : Color(.tertiarySystemFill), in: Capsule())
-                            .foregroundStyle(item == site ? Color.white : Color.primary)
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(DriveSite.all) { item in
+                        Button {
+                            site = item
+                        } label: {
+                            Text(item.name)
+                                .font(.subheadline.weight(.semibold))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(item == site ? Color.brand : Color(.tertiarySystemFill), in: Capsule())
+                                .foregroundStyle(item == site ? Color.white : Color.primary)
+                        }
+                        .buttonStyle(.plain)
+                        .id(item.id)
+                        .accessibilityIdentifier("site-\(item.id)")
                     }
-                    .buttonStyle(.plain)
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            // L'enseigne choisie reste visible (Aldi est en bout de barre).
+            .onAppear { proxy.scrollTo(site.id, anchor: .center) }
+            .onChange(of: site) { _, new in
+                withAnimation { proxy.scrollTo(new.id, anchor: .center) }
+            }
+            .accessibilityIdentifier("siteBar")
         }
         .background(.bar)
     }
@@ -166,7 +176,11 @@ struct CaptureReviewView: View {
                 } header: {
                     Text("Ces prix sont ceux de quel magasin ?")
                 } footer: {
-                    Text("Choisissez le magasin sélectionné sur le site \(site.name). Les prix en ligne peuvent différer légèrement de ceux en rayon.")
+                    if site.choosesStore {
+                        Text("Choisissez le magasin sélectionné sur le site \(site.name). Les prix en ligne peuvent différer légèrement de ceux en rayon.")
+                    } else {
+                        Text("Le site \(site.name) affiche les prix de l'enseigne, sans choix de magasin : indiquez celui où vous faites vos courses. Les prix en rayon peuvent différer légèrement.")
+                    }
                 }
 
                 Section {
@@ -182,6 +196,10 @@ struct CaptureReviewView: View {
                             ProductThumb(url: item.image, size: 36)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.name).font(.subheadline).lineLimit(2)
+                                let details = Fmt.join(item.brand, item.quantity)
+                                if !details.isEmpty {
+                                    Text(details).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                }
                                 if let gtin = item.gtin, gtin.filter(\.isNumber).isBarcodeLike {
                                     Label(gtin, systemImage: "barcode").font(.caption2).foregroundStyle(.secondary)
                                 }

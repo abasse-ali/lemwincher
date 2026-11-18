@@ -102,7 +102,7 @@ struct ProductCompareView: View {
                 }
                 .accessibilityIdentifier("driveCaptureButton")
             } footer: {
-                Text("Ouvre le site drive (Carrefour, Leclerc, Auchan…) sur ce produit : choisissez votre magasin, puis « Capturer les prix » pour les ajouter à vos relevés.")
+                Text("Ouvre le site de l'enseigne (Leclerc, Carrefour, Aldi…) sur ce produit : choisissez votre magasin si le site le demande, puis « Capturer les prix » pour les ajouter à vos relevés.")
             }
 
             if !product.isCustom {
@@ -144,7 +144,8 @@ struct ProductCompareView: View {
             AddPriceView(product: product)
         }
         .sheet(isPresented: $showDriveCapture) {
-            DriveCaptureView(query: Fmt.join(product.name, product.brand).replacingOccurrences(of: " · ", with: " "))
+            DriveCaptureView(query: Fmt.join(product.name, product.brand).replacingOccurrences(of: " · ", with: " "),
+                             preferredChain: DriveSite.nearest(in: model.storesByDistance())?.chainPrefix)
         }
         .alert("Prix cible", isPresented: $showTargetAlert) {
             TextField("Ex. : 3,50", text: $targetText)

@@ -467,6 +467,12 @@ final class AppModel {
         suggestions[SuggestionEngine.key(query)] ?? SuggestionResults()
     }
 
+    /// Produits de « Mes prix » (dont ceux capturés sur les sites des enseignes) qui correspondent à l'article.
+    func personalSuggestions(for query: String) -> [ProductSuggestion] {
+        SuggestionEngine.personal(state.myPrices, query: query, reference: referenceLocation,
+                                  radiusMeters: radiusMeters, currency: state.settings.currency)
+    }
+
     /// Charge les produits correspondant à un article ("Œufs") : d'abord ceux qui ont des prix,
     /// puis le catalogue complet, page par page (`more`).
     @MainActor

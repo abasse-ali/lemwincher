@@ -43,6 +43,19 @@ enum DemoData {
             MyPrice(product: bananas, store: store, price: 2.19, currency: "EUR", date: now.addingTimeInterval(-40 * day)),
             MyPrice(product: bananas, store: store, price: 1.99, currency: "EUR", date: now.addingTimeInterval(-3 * day)),
         ]
+        // Prix capturés sur le site d'Aldi (navigateur intégré) : ils remontent sous « Œufs » dans la liste.
+        let aldi = Store(id: "demo:aldi", name: "Aldi Toulouse", brand: "Aldi", kind: "supermarket", address: nil,
+                         lat: 43.6180, lon: 1.4290, priceCount: nil, logoURL: nil)
+        let aldiEggs = [
+            CapturedPrice(name: "6 œufs bio de poules élevées en plein air", price: 2.29, brand: "PICOTA®"),
+            CapturedPrice(name: "12 oeufs de poules élevées en plein air", price: 3.39, brand: "PICOTA®"),
+        ]
+        for egg in aldiEggs {
+            var entry = MyPrice(product: egg.product, store: aldi, price: egg.price, currency: "EUR",
+                                date: now.addingTimeInterval(-1 * day))
+            entry.source = "site Aldi"
+            state.myPrices.append(entry)
+        }
         state.watchlist = [
             WatchItem(product: nutella, targetPrice: 3.5, bestPrice: 4.15, bestStoreName: store.name, bestDate: now),
         ]
