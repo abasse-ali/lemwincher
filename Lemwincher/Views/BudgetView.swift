@@ -9,6 +9,7 @@ struct BudgetView: View {
     @State private var showReceipt = false
     @State private var showAddPrice = false
     @State private var showSettings = false
+    @State private var showDriveCapture = false
 
     var body: some View {
         let summary = model.budgetSummary
@@ -98,6 +99,11 @@ struct BudgetView: View {
                         } label: {
                             Label("Relever un prix", systemImage: "tag")
                         }
+                        Button {
+                            showDriveCapture = true
+                        } label: {
+                            Label("Relever des prix sur un site drive", systemImage: "safari")
+                        }
                     } label: {
                         Image(systemName: "plus")
                     }
@@ -117,6 +123,9 @@ struct BudgetView: View {
             }
             .sheet(isPresented: $showSettings) {
                 BudgetSettingsView()
+            }
+            .sheet(isPresented: $showDriveCapture) {
+                DriveCaptureView(query: "")
             }
             .alert("Budget", isPresented: Binding(
                 get: { model.budgetAlert != nil },

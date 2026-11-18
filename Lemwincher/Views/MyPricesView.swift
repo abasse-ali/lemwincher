@@ -185,7 +185,7 @@ struct MyPriceRow: View {
             ProductThumb(url: entry.product.imageURL, size: 44)
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.product.name).lineLimit(2)
-                Text(Fmt.join(entry.store.name, Fmt.day(entry.date)))
+                Text(Fmt.join(entry.store.name, Fmt.day(entry.date), entry.source))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

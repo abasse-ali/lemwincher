@@ -199,6 +199,8 @@ struct MyPrice: Identifiable, Codable, Hashable {
     var isDiscounted: Bool = false
     /// Identifiant du prix sur Open Prices s'il a été partagé.
     var sharedPriceID: Int?
+    /// Origine du relevé quand il ne vient pas du magasin lui-même ("site Carrefour").
+    var source: String? = nil
 }
 
 struct ShoppingItem: Identifiable, Codable, Hashable {

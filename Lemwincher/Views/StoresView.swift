@@ -274,6 +274,13 @@ struct ChainRankingView: View {
                     \(report.date.formatted(date: .abbreviated, time: .omitted)). Données : Open Prices.
                     """)
                 }
+                Section {
+                    Link(destination: URL(string: "https://www.quechoisir.org/carte-interactive-drives-n21243/")!) {
+                        Label("Comparer les magasins sur la carte UFC-Que Choisir", systemImage: "map")
+                    }
+                } footer: {
+                    Text("Niveau de prix de chaque supermarché proposant un drive, d'après les prix en ligne de plus de 4 500 magasins.")
+                }
             } else if model.chainIndexLoading {
                 Section {
                     HStack(spacing: 10) {

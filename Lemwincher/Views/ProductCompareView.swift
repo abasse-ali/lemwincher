@@ -20,6 +20,7 @@ struct ProductCompareView: View {
     @State private var didLoadFacts = false
     @State private var showTargetAlert = false
     @State private var targetText = ""
+    @State private var showDriveCapture = false
 
     init(product: Product) {
         _product = State(initialValue: product)
@@ -93,6 +94,17 @@ struct ProductCompareView: View {
 
             localSection(rows: rows)
 
+            Section {
+                Button {
+                    showDriveCapture = true
+                } label: {
+                    Label("Voir le prix sur le site d'une enseigne", systemImage: "safari")
+                }
+                .accessibilityIdentifier("driveCaptureButton")
+            } footer: {
+                Text("Ouvre le site drive (Carrefour, Leclerc, Auchan…) sur ce produit : choisissez votre magasin, puis « Capturer les prix » pour les ajouter à vos relevés.")
+            }
+
             if !product.isCustom {
                 estimatesSection(nearbyEstimates: nearbyEstimates, otherEstimates: otherEstimates, nearby: nearby)
             }
@@ -130,6 +142,9 @@ struct ProductCompareView: View {
         }
         .sheet(isPresented: $showAddPrice) {
             AddPriceView(product: product)
+        }
+        .sheet(isPresented: $showDriveCapture) {
+            DriveCaptureView(query: Fmt.join(product.name, product.brand).replacingOccurrences(of: " · ", with: " "))
         }
         .alert("Prix cible", isPresented: $showTargetAlert) {
             TextField("Ex. : 3,50", text: $targetText)
