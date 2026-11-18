@@ -561,7 +561,21 @@ struct ProductChoicesView: View {
                 }
                 .task(id: query) { await model.loadSuggestions(for: query) }
             }
-            if results.loaded && results.items.isEmpty {
+            if results.pricesUnavailable && !results.loading {
+                HStack(spacing: 10) {
+                    Image(systemName: "wifi.exclamationmark").foregroundStyle(Color.orange)
+                    Text("Prix momentanément indisponibles (Open Prices ne répond pas).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 4)
+                    Button("Réessayer") {
+                        Task { await model.loadSuggestions(for: query) }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+            if results.loaded && results.items.isEmpty && !results.pricesUnavailable {
                 Text("Aucun produit trouvé pour « \(query) ».")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)

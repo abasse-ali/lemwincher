@@ -474,7 +474,12 @@ final class AppModel {
         let key = SuggestionEngine.key(query)
         guard !key.isEmpty else { return }
         var results = suggestions[key] ?? SuggestionResults()
-        if results.loading || (results.loaded && !more) { return }
+        if results.loading { return }
+        if results.loaded && !more {
+            // Déjà chargé ; on ne recommence que si Open Prices n'avait pas répondu.
+            guard results.pricesUnavailable else { return }
+            results = SuggestionResults()
+        }
         if more && !results.hasMore { return }
         results.loading = true
         suggestions[key] = results
@@ -485,7 +490,9 @@ final class AppModel {
                                                     country: country,
                                                     currency: state.settings.currency,
                                                     nearbyChains: nearestStoreByChain)
-            results.items = await SuggestionService.pricedSuggestions(for: query, context: context)
+            let priced = await SuggestionService.pricedSuggestions(for: query, context: context)
+            results.items = priced.items
+            results.pricesUnavailable = priced.failed
         }
         let catalogText = SuggestionEngine.catalogText(query)
         if !catalogText.isEmpty,

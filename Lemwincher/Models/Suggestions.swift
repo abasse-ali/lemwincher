@@ -43,6 +43,8 @@ struct SuggestionResults {
     var hasMore = false
     var loading = false
     var loaded = false
+    /// Open Prices n'a pas répondu : les prix sont à recharger (bouton Réessayer, ou au prochain dépliage).
+    var pricesUnavailable = false
 }
 
 enum SuggestionEngine {

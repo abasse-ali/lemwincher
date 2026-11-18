@@ -12,11 +12,18 @@ enum SuggestionService {
     }
 
     /// Produits qui ont des prix relevés (Open Prices), triés par pertinence puis par prix.
-    static func pricedSuggestions(for query: String, context: Context, limit: Int = 8) async -> [ProductSuggestion] {
+    /// `failed` : Open Prices n'a pas répondu (à réessayer plus tard).
+    static func pricedSuggestions(for query: String, context: Context,
+                                  limit: Int = 8) async -> (items: [ProductSuggestion], failed: Bool) {
         var products: [OPProduct] = []
+        var answered = false
         for variant in SuggestionEngine.searchVariants(query) {
-            products += (try? await OpenPricesAPI.searchProducts(variant)) ?? []
+            if let found = try? await OpenPricesAPI.searchProducts(variant) {
+                products += found
+                answered = true
+            }
         }
+        guard answered else { return ([], true) }
         struct Candidate {
             let product: OPProduct
             let score: Int
@@ -52,6 +59,6 @@ enum SuggestionService {
             }
             return collected
         }
-        return SuggestionEngine.sorted(suggestions)
+        return (SuggestionEngine.sorted(suggestions), false)
     }
 }
