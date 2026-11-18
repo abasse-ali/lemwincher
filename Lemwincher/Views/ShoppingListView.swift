@@ -627,10 +627,11 @@ struct SuggestionRow: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                         if let placeText {
+                            // Deux lignes : le magasin ET la date du relevé doivent rester visibles.
                             Text(placeText)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                                .lineLimit(2)
                         }
                     }
                     .multilineTextAlignment(.leading)
