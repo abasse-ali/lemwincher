@@ -125,6 +125,13 @@ final class FormattingTests: XCTestCase {
         XCTAssertEqual(Fmt.percent(0.2), "0 %")
     }
 
+    func testOldReadings() {
+        let now = Date()
+        XCTAssertFalse(Fmt.isOld(now.addingTimeInterval(-30 * 86_400), now: now))
+        XCTAssertTrue(Fmt.isOld(now.addingTimeInterval(-120 * 86_400), now: now))
+        XCTAssertFalse(Fmt.isOld(.distantPast, now: now), "date inconnue : pas qualifiée d'ancienne")
+    }
+
     func testRelativeTimes() {
         let now = Date()
         XCTAssertEqual(Fmt.ago(now.addingTimeInterval(-30), now: now), "à l'instant")

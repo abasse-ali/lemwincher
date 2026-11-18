@@ -608,7 +608,7 @@ struct SuggestionRow: View {
         guard let offer = suggestion.offer else { return nil }
         let distance: String? = offer.distance.flatMap { $0 < 100_000 ? Fmt.distance($0) : nil }
         let place = offer.isLocal ? offer.storeName : "relevé chez \(offer.storeName)"
-        return Fmt.join(place, distance, Fmt.day(offer.date))
+        return Fmt.join(place, distance, Fmt.day(offer.date), Fmt.isOld(offer.date) ? "ancien relevé" : nil)
     }
 
     var body: some View {

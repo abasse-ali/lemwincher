@@ -65,6 +65,11 @@ enum Fmt {
         return day(date)
     }
 
+    /// Relevé de plus de 3 mois : le prix a pu changer depuis.
+    static func isOld(_ date: Date, now: Date = Date()) -> Bool {
+        date != .distantPast && now.timeIntervalSince(date) > 90 * 24 * 3600
+    }
+
     /// "+8 %", "-12 %".
     static func percent(_ value: Double) -> String {
         let rounded = Int(value.rounded())
@@ -440,7 +445,8 @@ struct ChainEstimateRow: View {
     private var subtitle: String {
         var parts: [String] = []
         if let reference = estimate.reference {
-            parts.append("relevé chez \(reference.storeName) · \(Fmt.day(reference.date))")
+            let old = Fmt.isOld(reference.date) ? " · ancien relevé" : ""
+            parts.append("relevé chez \(reference.storeName) · \(Fmt.day(reference.date))\(old)")
         }
         if let store = nearestStore, store.id != estimate.reference?.storeKey {
             let distanceText: String? = distance.map { Fmt.distance($0) }
