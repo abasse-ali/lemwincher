@@ -82,10 +82,16 @@ final class LemwincherUITests: XCTestCase {
         return element.exists
     }
 
+    /// Change d'onglet. Toucher par coordonnées + nouvel essai : une alerte du simulateur pendant le toucher
+    /// ne fait plus échouer le parcours (« element is no longer valid after interruption handling »).
     private func tab(_ app: XCUIApplication, _ label: String) {
         let button = app.tabBars.buttons[label]
         XCTAssertTrue(button.waitForExistence(timeout: 10), "onglet \(label)")
-        button.tap()
+        for _ in 0..<3 {
+            button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            sleep(1)
+            if button.isSelected { return }
+        }
     }
 
     func testOnboarding() {
