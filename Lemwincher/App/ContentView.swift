@@ -12,6 +12,9 @@ struct ContentView: View {
             SearchView()
                 .tabItem { Label("Produits", systemImage: "basket.fill") }
                 .tag(AppTab.compare)
+            RecipesView()
+                .tabItem { Label("Recettes", systemImage: "fork.knife") }
+                .tag(AppTab.recipes)
             ShoppingListView()
                 .tabItem { Label("Ma liste", systemImage: "cart.fill") }
                 .badge(model.state.shoppingList.filter { !$0.checked }.count)
@@ -19,9 +22,10 @@ struct ContentView: View {
             BudgetView()
                 .tabItem { Label("Budget", systemImage: "eurosign.circle.fill") }
                 .tag(AppTab.budget)
-            SettingsView()
-                .tabItem { Label("Réglages", systemImage: "gearshape.fill") }
-                .tag(AppTab.settings)
+        }
+        // Réglages : roue dentée ⚙︎ en haut des écrans (5 onglets tiennent sur l'iPhone sans « Plus »).
+        .sheet(isPresented: $bindable.showSettings) {
+            SettingsView(isSheet: true)
         }
         .onAppear {
             if !model.isUITest && model.state.settings.hasSeenOnboarding {

@@ -92,6 +92,9 @@ extension View {
             .navigationDestination(for: Rayon.self) { rayon in
                 RayonView(rayon: rayon)
             }
+            .navigationDestination(for: Recipe.self) { recipe in
+                RecipeDetailView(recipe: recipe)
+            }
     }
 }
 
@@ -259,6 +262,103 @@ struct ProductFactsView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+/// Sans porc : « Contient du porc » (rouge) ou « Contient de la gélatine » (orange, origine non précisée).
+struct DietWarningBanner: View {
+    let pork: Bool
+    /// Le nom du produit suffit à le dire (jambon, lardons…), sinon c'est la liste d'ingrédients.
+    var byName = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: pork ? "exclamationmark.octagon.fill" : "info.circle.fill")
+                .font(.title2)
+                .foregroundStyle(pork ? Color.red : Color.orange)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(pork ? "Contient du porc" : "Contient de la gélatine")
+                    .font(.headline)
+                Text(pork
+                     ? (byName ? "D'après le nom du produit." : "D'après sa liste d'ingrédients (Open Food Facts).")
+                     : "Son origine n'est pas précisée : la gélatine est souvent d'origine porcine.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Description du produit : dénomination, ingrédients, origine, conservation, nutrition pour 100 g.
+struct ProductDescriptionSection: View {
+    let facts: ProductFacts
+    @State private var showIngredients = false
+
+    var body: some View {
+        Section {
+            if let ingredients = facts.ingredientsText {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Ingrédients", systemImage: "list.bullet.rectangle")
+                        .font(.subheadline.weight(.semibold))
+                    Text(ingredients)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(showIngredients ? nil : 4)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if ingredients.count > 180 {
+                        Button(showIngredients ? "Réduire" : "Lire la suite") {
+                            withAnimation(.snappy) { showIngredients.toggle() }
+                        }
+                        .font(.footnote.weight(.semibold))
+                        .buttonStyle(.borderless)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            if let origins = facts.origins {
+                Label {
+                    Text("Origine : ").font(.subheadline.weight(.semibold)) + Text(origins).font(.subheadline)
+                } icon: {
+                    Image(systemName: "globe.europe.africa")
+                }
+            }
+            if let conservation = facts.conservation {
+                Label {
+                    Text(conservation).font(.subheadline)
+                } icon: {
+                    Image(systemName: "thermometer.snowflake")
+                }
+            }
+            if !facts.nutrition.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Valeurs nutritionnelles pour 100 g", systemImage: "chart.bar.doc.horizontal")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.bottom, 2)
+                    ForEach(facts.nutrition.rows) { row in
+                        HStack {
+                            Text(row.label)
+                                .font(row.indent ? .footnote : .subheadline)
+                                .foregroundStyle(row.indent ? Color.secondary : Color.primary)
+                                .padding(.leading, row.indent ? 14 : 0)
+                            Spacer()
+                            Text(row.value)
+                                .font(.subheadline.monospacedDigit())
+                        }
+                        if row.label != facts.nutrition.rows.last?.label {
+                            Divider()
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        } header: {
+            Text("Description")
+        } footer: {
+            Text("Source : Open Food Facts, base collaborative. Vérifiez l'emballage en cas d'allergie.")
+        }
     }
 }
 
@@ -534,7 +634,7 @@ struct LocationNeededView: View {
                 .foregroundStyle(Color.brand)
             if status == .denied || status == .restricted {
                 Text("Localisation désactivée").font(.title3.bold())
-                Text("Autorisez la localisation dans les Réglages de l'iPhone, ou indiquez l'adresse de votre domicile dans l'onglet Réglages de l'app.")
+                Text("Autorisez la localisation dans les Réglages de l'iPhone, ou indiquez l'adresse de votre domicile dans les Réglages de l'app (⚙︎ en haut à gauche).")
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                 Button("Ouvrir les Réglages de l'iPhone") {

@@ -273,6 +273,14 @@ struct AppSettings: Codable, Hashable {
     /// Jour du mois où le budget repart à zéro (1 = le 1er ; ex. 5 si la paie arrive le 5).
     var budgetStartDay: Int = 1
     var budgetAlerts: Bool = true
+    /// Ne propose ni produits ni recettes au porc (lardons et jambon de dinde, chorizo de bœuf… restent).
+    var noPork: Bool = true
+    /// Recettes végétariennes seulement.
+    var vegetarian: Bool = false
+    /// Nombre de personnes proposé pour les recettes (1, 2 ou 4 le plus souvent).
+    var defaultServings: Int = 1
+    /// Mode cuisine : lire chaque étape à voix haute.
+    var readStepsAloud: Bool = false
 
     static let currencies = ["EUR", "KMF", "XOF", "XAF", "MGA", "MUR", "MAD", "DZD", "TND", "CHF", "GBP", "USD", "CAD"]
 
@@ -300,6 +308,10 @@ struct AppSettings: Codable, Hashable {
         budgetAmount = (try? c.decode(Double.self, forKey: .budgetAmount)) ?? 100
         budgetStartDay = (try? c.decode(Int.self, forKey: .budgetStartDay)) ?? 1
         budgetAlerts = (try? c.decode(Bool.self, forKey: .budgetAlerts)) ?? true
+        noPork = (try? c.decode(Bool.self, forKey: .noPork)) ?? true
+        vegetarian = (try? c.decode(Bool.self, forKey: .vegetarian)) ?? false
+        defaultServings = min(max((try? c.decode(Int.self, forKey: .defaultServings)) ?? 1, 1), 12)
+        readStepsAloud = (try? c.decode(Bool.self, forKey: .readStepsAloud)) ?? false
     }
 }
 
@@ -311,6 +323,10 @@ struct PersistedState: Codable, Equatable {
     var recentProducts: [Product] = []
     var watchlist: [WatchItem] = []
     var expenses: [Expense] = []
+    /// Recettes mises en favori (identifiants).
+    var favoriteRecipes: [String] = []
+    /// Menu de la semaine (identifiants des recettes, dans l'ordre des jours).
+    var weekMenu: [String] = []
 
     init() {}
 
@@ -322,10 +338,12 @@ struct PersistedState: Codable, Equatable {
         recentProducts = (try? c.decode([Product].self, forKey: .recentProducts)) ?? []
         watchlist = (try? c.decode([WatchItem].self, forKey: .watchlist)) ?? []
         expenses = ((try? c.decode([Lossy<Expense>].self, forKey: .expenses)) ?? []).compactMap(\.value)
+        favoriteRecipes = (try? c.decode([String].self, forKey: .favoriteRecipes)) ?? []
+        weekMenu = (try? c.decode([String].self, forKey: .weekMenu)) ?? []
     }
 }
 
-/// Onglets de l'app (pour y naviguer depuis Siri ou une notification).
+/// Onglets de l'app (pour y naviguer depuis Siri ou une notification). Les réglages s'ouvrent avec ⚙︎.
 enum AppTab: Hashable {
-    case stores, compare, list, budget, settings
+    case stores, compare, recipes, list, budget
 }

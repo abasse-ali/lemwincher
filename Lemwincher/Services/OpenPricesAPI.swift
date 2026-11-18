@@ -459,7 +459,50 @@ enum OpenFoodFactsAPI {
     }
 }
 
-/// Informations nutritionnelles et environnementales d'un produit (Open Food Facts).
+/// Valeurs nutritionnelles pour 100 g (ou 100 ml).
+struct Nutrition: Hashable {
+    var energyKcal: Double?
+    var fat: Double?
+    var saturatedFat: Double?
+    var carbohydrates: Double?
+    var sugars: Double?
+    var fiber: Double?
+    var proteins: Double?
+    var salt: Double?
+
+    var isEmpty: Bool {
+        [energyKcal, fat, saturatedFat, carbohydrates, sugars, fiber, proteins, salt].allSatisfy { $0 == nil }
+    }
+
+    struct Row: Hashable, Identifiable {
+        let label: String
+        let value: String
+        /// Sous-ligne en retrait (« dont sucres »).
+        let indent: Bool
+
+        var id: String { label }
+    }
+
+    /// Lignes du tableau : « Matières grasses · 31 g », avec les sous-lignes en retrait.
+    var rows: [Row] {
+        func grams(_ value: Double?) -> String? {
+            value.map { String(format: $0 < 10 ? "%.1f g" : "%.0f g", $0).replacingOccurrences(of: ".", with: ",") }
+        }
+        let all: [(String, String?, Bool)] = [
+            ("Énergie", energyKcal.map { String(format: "%.0f kcal", $0) }, false),
+            ("Matières grasses", grams(fat), false),
+            ("dont acides gras saturés", grams(saturatedFat), true),
+            ("Glucides", grams(carbohydrates), false),
+            ("dont sucres", grams(sugars), true),
+            ("Fibres", grams(fiber), false),
+            ("Protéines", grams(proteins), false),
+            ("Sel", grams(salt), false),
+        ]
+        return all.compactMap { row in row.1.map { Row(label: row.0, value: $0, indent: row.2) } }
+    }
+}
+
+/// Fiche d'un produit (Open Food Facts) : notes, description, ingrédients, nutrition, porc éventuel.
 struct ProductFacts: Hashable {
     /// "a" … "e"
     let nutriScore: String?
@@ -469,9 +512,24 @@ struct ProductFacts: Hashable {
     let ecoScore: String?
     let allergens: [String]
     let labels: [String]
+    /// Dénomination : « Pâte à tartiner aux noisettes et au cacao ».
+    var genericName: String? = nil
+    var ingredientsText: String? = nil
+    var origins: String? = nil
+    var conservation: String? = nil
+    var nutrition = Nutrition()
+    /// La liste d'ingrédients révèle du porc (graisse de porc, bacon, jambon…).
+    var containsPork = false
+    /// Gélatine sans origine précisée (souvent porcine).
+    var unspecifiedGelatin = false
 
     var isEmpty: Bool {
         nutriScore == nil && nova == nil && ecoScore == nil && allergens.isEmpty && labels.isEmpty
+            && genericName == nil && ingredientsText == nil && nutrition.isEmpty && !containsPork
+    }
+
+    var hasDescription: Bool {
+        genericName != nil || ingredientsText != nil || origins != nil || conservation != nil || !nutrition.isEmpty
     }
 
     private static let allergenNames: [String: String] = [
@@ -505,20 +563,34 @@ struct ProductFacts: Hashable {
 }
 
 extension OpenFoodFactsAPI {
-    private struct FactsResponse: Decodable {
+    struct FactsResponse: Decodable {
         let product: FactsProduct?
     }
 
-    private struct FactsProduct: Decodable {
+    /// Champs Open Food Facts, lus avec leurs noms d'origine (« generic_name_fr »).
+    struct FactsProduct: Decodable {
         let nutriscoreGrade: String?
         let novaGroup: Int?
         let ecoscoreGrade: String?
         let environmentalScoreGrade: String?
         let allergensTags: [String]?
         let labelsTags: [String]?
+        let ingredientsTags: [String]?
+        let genericName: String?
+        let ingredientsText: String?
+        let origins: String?
+        let conservation: String?
+        let nutrition: Nutrition
 
         private enum CodingKeys: String, CodingKey {
-            case nutriscoreGrade, novaGroup, ecoscoreGrade, environmentalScoreGrade, allergensTags, labelsTags
+            case nutriscoreGrade = "nutriscore_grade", novaGroup = "nova_group", ecoscoreGrade = "ecoscore_grade"
+            case environmentalScoreGrade = "environmental_score_grade", allergensTags = "allergens_tags"
+            case labelsTags = "labels_tags", ingredientsTags = "ingredients_tags"
+            case genericNameFr = "generic_name_fr", genericName = "generic_name"
+            case ingredientsTextFr = "ingredients_text_fr", ingredientsText = "ingredients_text"
+            case origins, originsFr = "origins_fr"
+            case conservationFr = "conservation_conditions_fr", conservation = "conservation_conditions"
+            case nutriments
         }
 
         init(from decoder: Decoder) throws {
@@ -529,23 +601,65 @@ extension OpenFoodFactsAPI {
             environmentalScoreGrade = c.lossyString(.environmentalScoreGrade)
             allergensTags = try? c.decodeIfPresent([String].self, forKey: .allergensTags)
             labelsTags = try? c.decodeIfPresent([String].self, forKey: .labelsTags)
+            ingredientsTags = try? c.decodeIfPresent([String].self, forKey: .ingredientsTags)
+            genericName = FactsProduct.text(c.lossyString(.genericNameFr)) ?? FactsProduct.text(c.lossyString(.genericName))
+            ingredientsText = FactsProduct.text(c.lossyString(.ingredientsTextFr)) ?? FactsProduct.text(c.lossyString(.ingredientsText))
+            origins = FactsProduct.text(c.lossyString(.originsFr)) ?? FactsProduct.text(c.lossyString(.origins))
+            conservation = FactsProduct.text(c.lossyString(.conservationFr)) ?? FactsProduct.text(c.lossyString(.conservation))
+            var nutrition = Nutrition()
+            if let n = try? c.nestedContainer(keyedBy: AnyCodingKey.self, forKey: .nutriments) {
+                nutrition.energyKcal = n.lossyDouble(AnyCodingKey("energy-kcal_100g"))
+                nutrition.fat = n.lossyDouble(AnyCodingKey("fat_100g"))
+                nutrition.saturatedFat = n.lossyDouble(AnyCodingKey("saturated-fat_100g"))
+                nutrition.carbohydrates = n.lossyDouble(AnyCodingKey("carbohydrates_100g"))
+                nutrition.sugars = n.lossyDouble(AnyCodingKey("sugars_100g"))
+                nutrition.fiber = n.lossyDouble(AnyCodingKey("fiber_100g"))
+                nutrition.proteins = n.lossyDouble(AnyCodingKey("proteins_100g"))
+                nutrition.salt = n.lossyDouble(AnyCodingKey("salt_100g"))
+            }
+            self.nutrition = nutrition
+        }
+
+        /// Texte propre : espaces normalisés, « _lait_ » (allergène souligné par OFF) -> « lait ».
+        static func text(_ raw: String?) -> String? {
+            guard let raw else { return nil }
+            let cleaned = raw.replacingOccurrences(of: "_", with: "")
+                .split(whereSeparator: \.isWhitespace)
+                .joined(separator: " ")
+            return cleaned.isEmpty ? nil : cleaned
+        }
+
+        var facts: ProductFacts {
+            var facts = ProductFacts(nutriScore: nutriscoreGrade,
+                                     nova: novaGroup,
+                                     ecoScore: environmentalScoreGrade ?? ecoscoreGrade,
+                                     allergenTags: allergensTags ?? [],
+                                     labelTags: labelsTags ?? [])
+            facts.genericName = genericName
+            facts.ingredientsText = ingredientsText
+            facts.origins = origins
+            facts.conservation = conservation
+            facts.nutrition = nutrition
+            let ingredients = ingredientsTags ?? []
+            facts.containsPork = DietFilter.porkIngredients(ingredients)
+            facts.unspecifiedGelatin = !facts.containsPork && DietFilter.unspecifiedGelatin(ingredients)
+            return facts
         }
     }
 
-    /// Nutri-Score, groupe NOVA, Éco-Score, allergènes et labels.
+    /// Notes, description, ingrédients, nutrition et porc éventuel d'un produit.
     static func facts(code: String) async throws -> ProductFacts? {
         let safe = code.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? code
-        let fields = "nutriscore_grade,nova_group,ecoscore_grade,environmental_score_grade,allergens_tags,labels_tags"
+        let fields = ["nutriscore_grade", "nova_group", "ecoscore_grade", "environmental_score_grade", "allergens_tags",
+                      "labels_tags", "ingredients_tags", "generic_name_fr", "generic_name", "ingredients_text_fr",
+                      "ingredients_text", "origins", "origins_fr", "conservation_conditions_fr",
+                      "conservation_conditions", "nutriments"].joined(separator: ",")
         let response: FactsResponse = try await HTTP.get(
             "https://world.openfoodfacts.org/api/v2/product/\(safe).json",
-            query: ["fields": fields]
+            query: ["fields": fields, "lc": "fr"],
+            snakeCase: false
         )
-        guard let p = response.product else { return nil }
-        let facts = ProductFacts(nutriScore: p.nutriscoreGrade,
-                                 nova: p.novaGroup,
-                                 ecoScore: p.environmentalScoreGrade ?? p.ecoscoreGrade,
-                                 allergenTags: p.allergensTags ?? [],
-                                 labelTags: p.labelsTags ?? [])
+        guard let facts = response.product?.facts else { return nil }
         return facts.isEmpty ? nil : facts
     }
 }

@@ -162,19 +162,19 @@ struct ShoppingListView: View {
                                                    onCapture: { query in captureRequest = CaptureRequest(query: query) })
                             } label: {
                                 ShoppingRow(item: $item, onToggle: { toggle(item) })
-                                    // Glisser vers la droite : acheté (dépense) / pas acheté.
-                                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                        Button {
-                                            toggle(item)
-                                        } label: {
-                                            if item.checked {
-                                                Label("Pas acheté", systemImage: "arrow.uturn.backward")
-                                            } else {
-                                                Label("Acheté", systemImage: "checkmark")
-                                            }
-                                        }
-                                        .tint(item.checked ? Color.gray : Color.brand)
+                            }
+                            // Glisser la ligne vers la droite : acheté (dépense) / pas acheté.
+                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                Button {
+                                    toggle(item)
+                                } label: {
+                                    if item.checked {
+                                        Label("Pas acheté", systemImage: "arrow.uturn.backward")
+                                    } else {
+                                        Label("Acheté", systemImage: "checkmark")
                                     }
+                                }
+                                .tint(item.checked ? Color.gray : Color.brand)
                             }
                             // Pas d'identifiant ici : il écraserait ceux des boutons à l'intérieur (cases, produits, site).
                         }
@@ -630,6 +630,7 @@ struct ProductChoicesView: View {
     var body: some View {
         let results = model.suggestionResults(for: query)
         let items = SuggestionEngine.merge(personal: model.personalSuggestions(for: query), remote: results.items)
+            .filter { model.dietAllows($0.product) }
         Group {
             if let choice = item.choice {
                 Button {

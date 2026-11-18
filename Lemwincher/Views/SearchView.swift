@@ -33,6 +33,7 @@ struct SearchView: View {
             .navigationTitle("Produits")
             .searchable(text: $query, prompt: "Produit, marque ou code-barres")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) { SettingsButton() }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showScanner = true
@@ -226,7 +227,7 @@ struct SearchView: View {
                 if let searchError {
                     Text(searchError).foregroundStyle(.secondary)
                 }
-                ForEach(results, id: \.code) { item in
+                ForEach(results.filter { model.dietAllows($0.asProduct()) }, id: \.code) { item in
                     NavigationLink(value: item.asProduct()) {
                         ProductRow(product: item.asProduct(),
                                    subtitle: item.priceCount.map { "\($0) prix relevés" })
@@ -248,7 +249,7 @@ struct SearchView: View {
     @ViewBuilder
     private var catalogSection: some View {
         let pricedCodes = Set(results.map(\.code))
-        let others = catalog.filter { !pricedCodes.contains($0.id) }
+        let others = catalog.filter { !pricedCodes.contains($0.id) && model.dietAllows($0.product) }
         Section {
             if catalogLoading && catalog.isEmpty {
                 HStack(spacing: 10) {

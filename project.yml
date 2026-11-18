@@ -11,7 +11,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.2.0"
+    MARKETING_VERSION: "1.3.0"
     CURRENT_PROJECT_VERSION: "1"
 
 targets:
@@ -20,6 +20,10 @@ targets:
     platform: iOS
     sources:
       - path: Lemwincher
+      - path: Shared
+    dependencies:
+      # Minuteurs de cuisine dans la Dynamic Island (intégrée à l'app, dossier PlugIns).
+      - target: LemwincherWidgets
     settings:
       base:
         PRODUCT_NAME: Lemwincher
@@ -39,6 +43,26 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
         ENABLE_PREVIEWS: "YES"
         CODE_SIGN_STYLE: Automatic
+
+  # Extension : compte à rebours des minuteurs de cuisine (Dynamic Island, écran verrouillé).
+  LemwincherWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: LemwincherWidgets
+      - path: Shared
+    info:
+      path: LemwincherWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Lemwincher
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lemwincher.app.widgets
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        SKIP_INSTALL: "YES"
 
   # Tests unitaires (logique de calcul, analyse des données, formats).
   LemwincherTests:

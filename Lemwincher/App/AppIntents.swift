@@ -86,8 +86,28 @@ struct OpenBudgetIntent: AppIntent {
     }
 }
 
+/// « Dis Siri, une idée de recette Lemwincher » : ouvre les recettes.
+struct OpenRecipesIntent: AppIntent {
+    static var title: LocalizedStringResource = "Idées de recettes"
+    static var description = IntentDescription("Ouvre les recettes : idées selon votre liste, plat composé, menu de la semaine.")
+    static var openAppWhenRun: Bool = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        AppModel.shared.selectedTab = .recipes
+        return .result()
+    }
+}
+
 struct LemwincherShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
+        AppShortcut(intent: OpenRecipesIntent(),
+                    phrases: [
+                        "Une idée de recette \(.applicationName)",
+                        "Qu'est-ce que je cuisine \(.applicationName)",
+                    ],
+                    shortTitle: "Recettes",
+                    systemImageName: "fork.knife")
         AppShortcut(intent: BudgetStatusIntent(),
                     phrases: [
                         "Combien il me reste \(.applicationName)",

@@ -11,5 +11,8 @@
 	<array>
 		<string>fetch</string>
 	</array>
+	<!-- Minuteurs du mode cuisine dans la Dynamic Island et sur l'écran verrouillé. -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 </dict>
 </plist>

@@ -2,9 +2,13 @@ import SwiftUI
 import MapKit
 import UniformTypeIdentifiers
 
-/// Onglet "Réglages" : rayon, domicile, magasins favoris, compte Open Prices, devise, sauvegarde, sources.
+/// Réglages (roue dentée ⚙︎) : alimentation, rayon, domicile, magasins favoris, compte Open Prices,
+/// devise, sauvegarde, sources.
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    /// Ouvert en feuille depuis ⚙︎ : bouton « OK » pour fermer.
+    var isSheet = false
 
     @State private var address = ""
     @State private var geocoding = false
@@ -25,6 +29,30 @@ struct SettingsView: View {
         @Bindable var bindable = model
         NavigationStack {
             Form {
+                Section {
+                    Toggle(isOn: $bindable.state.settings.noPork) {
+                        Label("Sans porc", systemImage: "checkmark.seal")
+                    }
+                    Toggle(isOn: $bindable.state.settings.vegetarian) {
+                        Label("Recettes végétariennes seulement", systemImage: "leaf")
+                    }
+                    Picker(selection: $bindable.state.settings.defaultServings) {
+                        ForEach([1, 2, 4, 6], id: \.self) { count in
+                            Text(count == 1 ? "1 personne" : "\(count) personnes").tag(count)
+                        }
+                    } label: {
+                        Label("Je cuisine pour", systemImage: "person.2")
+                    }
+                    Toggle(isOn: $bindable.state.settings.readStepsAloud) {
+                        Label("Lire les étapes à voix haute", systemImage: "speaker.wave.2")
+                    }
+                } header: {
+                    Text("Mon alimentation")
+                } footer: {
+                    Text("Sans porc : les recettes et les produits proposés n'en contiennent pas (jambon, lardons, saucisson, chorizo… sauf versions dinde, volaille ou bœuf). La fiche d'un produit signale aussi le porc et la gélatine trouvés dans sa liste d'ingrédients.")
+                }
+                .tint(Color.brand)
+
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
@@ -103,6 +131,14 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Réglages")
+            .toolbar {
+                if isSheet {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("OK") { dismiss() }
+                            .accessibilityIdentifier("closeSettings")
+                    }
+                }
+            }
             .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
                 importBackup(result)
             }

@@ -11,6 +11,8 @@ final class AppModel {
 
     var state: PersistedState
     var selectedTab: AppTab = .stores
+    /// Réglages ouverts (roue dentée ⚙︎ en haut des écrans).
+    var showSettings = false
 
     // Magasins
     var stores: [Store] = []
@@ -454,6 +456,52 @@ final class AppModel {
 
     func deleteExpenses(ids: Set<UUID>) {
         state.expenses.removeAll { ids.contains($0.id) }
+    }
+
+    // MARK: Alimentation et recettes
+
+    /// Ce produit peut-il être proposé (sans porc si demandé) ?
+    func dietAllows(_ product: Product) -> Bool {
+        DietFilter.allows(product, noPork: state.settings.noPork)
+    }
+
+    /// Recettes compatibles avec l'alimentation choisie.
+    var recipes: [Recipe] {
+        RecipeEngine.allowed(RecipeBook.all, noPork: state.settings.noPork, vegetarian: state.settings.vegetarian)
+    }
+
+    /// Noms des articles de la liste (et des produits choisis dessous), pour savoir ce qui manque à une recette.
+    var listNames: [String] {
+        state.shoppingList.flatMap { item in [item.product.name] + [item.choice?.name].compactMap { $0 } }
+    }
+
+    /// Ajoute à la liste les articles qui n'y sont pas encore. Renvoie le nombre d'articles ajoutés.
+    @discardableResult
+    func addIngredients(_ names: [String]) -> Int {
+        var added = 0
+        for name in names where !RecipeEngine.isInList(name, listNames: listNames) {
+            state.shoppingList.append(ShoppingItem(product: .custom(named: name)))
+            added += 1
+        }
+        return added
+    }
+
+    func isFavorite(recipe id: String) -> Bool {
+        state.favoriteRecipes.contains(id)
+    }
+
+    func toggleFavorite(recipe id: String) {
+        if let index = state.favoriteRecipes.firstIndex(of: id) {
+            state.favoriteRecipes.remove(at: index)
+        } else {
+            state.favoriteRecipes.append(id)
+        }
+    }
+
+    /// Menu de la semaine enregistré (les recettes qui n'existent plus ou ne conviennent plus sont ignorées).
+    var weekMenu: [Recipe] {
+        let allowed = Set(recipes.map(\.id))
+        return state.weekMenu.compactMap { id in allowed.contains(id) ? RecipeBook.recipe(id: id) : nil }
     }
 
     // MARK: Articles cochés = achetés = dépenses

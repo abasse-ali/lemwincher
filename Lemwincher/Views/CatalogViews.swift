@@ -134,37 +134,64 @@ struct RayonView: View {
     private var content: some View {
         switch mode {
         case .all:
-            if !loading && items.isEmpty && errorText == nil {
-                Text("Aucun produit trouvé.").foregroundStyle(.secondary)
+            // Sans porc si demandé ; le chargement de la suite part du dernier produit reçu, affiché ou non.
+            let shown = items.filter { model.dietAllows($0.product) }
+            if !loading && shown.isEmpty && errorText == nil {
+                Text(items.isEmpty ? "Aucun produit trouvé." : "Aucun produit sans porc sur cette page.")
+                    .foregroundStyle(.secondary)
             }
-            ForEach(items) { item in
+            ForEach(shown) { item in
                 NavigationLink(value: item.product) {
                     CatalogRow(item: item)
                 }
                 .onAppear {
-                    if item.id == items.last?.id { Task { await loadMore() } }
+                    if item.id == shown.last?.id { Task { await loadMore() } }
                 }
             }
+            hiddenNote(items.count - shown.count)
         case .priced:
-            if !loading && priced.isEmpty && errorText == nil {
+            let shown = priced.filter { model.dietAllows($0.asProduct()) }
+            if !loading && shown.isEmpty && errorText == nil {
                 Text("Aucun prix relevé pour ce rayon pour l'instant.").foregroundStyle(.secondary)
             }
-            ForEach(priced, id: \.code) { product in
+            ForEach(shown, id: \.code) { product in
                 NavigationLink(value: product.asProduct()) {
                     ProductRow(product: product.asProduct(),
                                subtitle: product.priceCount.map { "\($0) prix relevés" })
                 }
                 .onAppear {
-                    if product.code == priced.last?.code { Task { await loadMore() } }
+                    if product.code == shown.last?.code { Task { await loadMore() } }
                 }
             }
+            hiddenNote(priced.count - shown.count)
         case .cheapest:
-            if !loading && cheapest.isEmpty && errorText == nil {
+            let shown = cheapest.filter { model.dietAllows($0.obs.product) }
+            if !loading && shown.isEmpty && errorText == nil {
                 Text("Pas assez de prix au kilo dans ce rayon.").foregroundStyle(.secondary)
             }
-            ForEach(cheapest) { alternative in
+            ForEach(shown) { alternative in
                 NavigationLink(value: alternative.obs.product) {
                     AlternativeRow(alternative: alternative)
+                }
+            }
+            hiddenNote(cheapest.count - shown.count)
+        }
+    }
+
+    /// « 3 produits au porc masqués » (+ de quoi charger la suite si tout une page a été masquée).
+    @ViewBuilder
+    private func hiddenNote(_ hidden: Int) -> some View {
+        if hidden > 0 {
+            HStack {
+                Label(hidden == 1 ? "1 produit au porc masqué" : "\(hidden) produits au porc masqués",
+                      systemImage: "eye.slash")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if !loading && (mode == .all ? hasMore : (mode == .priced && pricedHasMore)) {
+                    Button("Voir plus") { Task { await loadMore() } }
+                        .font(.footnote.weight(.semibold))
+                        .buttonStyle(.borderless)
                 }
             }
         }

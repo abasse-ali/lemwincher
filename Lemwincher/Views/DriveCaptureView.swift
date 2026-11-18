@@ -62,6 +62,31 @@ struct DriveCaptureView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Fermer") { dismiss() }
                 }
+                // Le titre est un menu : changer d'enseigne d'un geste, même celles hors de la barre.
+                ToolbarItem(placement: .principal) {
+                    Menu {
+                        ForEach(DriveSite.all) { item in
+                            Button {
+                                site = item
+                            } label: {
+                                if item == site {
+                                    Label(item.name, systemImage: "checkmark")
+                                } else {
+                                    Text(item.name)
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(site.name).font(.headline)
+                            Image(systemName: "chevron.down.circle.fill")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .foregroundStyle(.primary)
+                    }
+                    .accessibilityIdentifier("sitePicker")
+                }
                 ToolbarItemGroup(placement: .bottomBar) {
                     Button {
                         webView.goBack()

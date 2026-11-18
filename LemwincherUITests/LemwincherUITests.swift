@@ -271,11 +271,11 @@ final class LemwincherUITests: XCTestCase {
             sleep(1)
         }
 
-        // Acheté = dépense du mois : glisser l'article vers la droite.
-        // « Œufs » (produit choisi, prix connu) : dépense directe.
-        markBought(app, "Œufs", amount: nil)
-        // « Pommes Gala » (aucun prix connu) : l'app demande le montant payé.
-        markBought(app, "Pommes Gala", amount: "2,40")
+        // Acheté = dépense du mois.
+        // « Œufs » (produit choisi, prix connu) : la case à cocher, dépense directe.
+        markBought(app, "Œufs", amount: nil, swipe: false)
+        // « Pommes Gala » (aucun prix connu) : glisser vers la droite ; l'app demande le montant payé.
+        markBought(app, "Pommes Gala", amount: "2,40", swipe: true)
         sleep(1)
         snapshot("13e-articles-coches-depenses")
 
@@ -322,30 +322,148 @@ final class LemwincherUITests: XCTestCase {
             goBack(app)
         }
 
-        // 5. Réglages.
-        tab(app, "Réglages")
-        sleep(1)
-        snapshot("18-reglages")
-        app.swipeUp()
-        sleep(1)
-        snapshot("18b-reglages-suite")
+        // 5. Recettes : idées, fiche, mode cuisine pas à pas, plat composé, menu de la semaine.
+        tourOfRecipes(app)
 
-        // 6. En dernier (dépend du vrai site aldi.fr) : capture des prix du site d'Aldi depuis « Ma liste ».
+        // 6. Réglages : roue dentée ⚙︎ en haut de « Autour de moi ».
+        tab(app, "Autour de moi")
+        sleep(1)
+        let gear = app.navigationBars.buttons["Réglages"].firstMatch
+        if gear.waitForExistence(timeout: 5) {
+            gear.tap()
+            sleep(1)
+            snapshot("18-reglages")
+            app.swipeUp()
+            sleep(1)
+            snapshot("18b-reglages-suite")
+            let close = element(app, "closeSettings")
+            if close.waitForExistence(timeout: 3) { close.tap() }
+            sleep(1)
+        }
+
+        // 7. En dernier (dépend du vrai site aldi.fr) : capture des prix du site d'Aldi depuis « Ma liste ».
         captureFromAldi(app)
     }
 
-    /// Glisse l'article vers la droite et touche « Acheté » ; répond à la question du montant si elle vient.
-    private func markBought(_ app: XCUIApplication, _ name: String, amount: String?) {
+    private func tourOfRecipes(_ app: XCUIApplication) {
+        tab(app, "Recettes")
+        sleep(2)
+        snapshot("20-recettes")
+        app.swipeUp()
+        sleep(1)
+        snapshot("20b-recettes-liste")
+        app.swipeDown()
+        app.swipeDown()
+
+        // Une fiche recette, puis le mode cuisine.
+        let card = element(app, "recipeCard")
+        reveal(card, in: app)
+        if card.waitForExistence(timeout: 5) {
+            card.tap()
+            sleep(2)
+            snapshot("21-recette")
+            app.swipeUp()
+            sleep(1)
+            snapshot("21b-recette-suite")
+            app.swipeDown()
+            app.swipeDown()
+            let cook = element(app, "startCooking")
+            if cook.waitForExistence(timeout: 5) && cook.isHittable {
+                cook.tap()
+                sleep(2)
+                snapshot("22-cuisine-mise-en-place")
+                let next = element(app, "cookingNext")
+                // Avance jusqu'à une étape avec un minuteur (« … 5 min … »).
+                for step in 1...4 where next.waitForExistence(timeout: 3) {
+                    next.tap()
+                    sleep(1)
+                    if step == 1 { snapshot("22b-cuisine-etape") }
+                    let timer = element(app, "startTimer")
+                    if timer.exists && timer.isHittable {
+                        timer.tap()
+                        sleep(3)
+                        snapshot("22c-cuisine-minuteur")
+                        break
+                    }
+                }
+                let close = app.buttons["Fermer le mode cuisine"].firstMatch
+                if close.waitForExistence(timeout: 3) { close.tap() }
+                sleep(1)
+            }
+            goBack(app)
+        }
+
+        // Composer un plat.
+        let compose = app.segmentedControls.buttons["Composer"].firstMatch
+        if compose.waitForExistence(timeout: 5) {
+            compose.tap()
+            sleep(1)
+            snapshot("23-composer")
+            let surprise = element(app, "surpriseDish")
+            if surprise.waitForExistence(timeout: 3) {
+                surprise.tap()
+                sleep(1)
+                snapshot("23b-composer-surprise")
+            }
+            let dish = element(app, "composedDish")
+            if dish.waitForExistence(timeout: 3) && dish.isHittable {
+                dish.tap()
+                sleep(2)
+                snapshot("23c-plat-compose")
+                goBack(app)
+            }
+        }
+
+        // Menu de la semaine et ses courses.
+        let week = app.segmentedControls.buttons["Menu"].firstMatch
+        if week.waitForExistence(timeout: 5) {
+            week.tap()
+            sleep(1)
+            let generate = element(app, "generateMenu")
+            if generate.waitForExistence(timeout: 3) {
+                generate.tap()
+                sleep(1)
+                snapshot("24-menu-semaine")
+            }
+            let shopping = element(app, "addWeekShopping")
+            reveal(shopping, in: app)
+            if shopping.waitForExistence(timeout: 3) && shopping.isHittable {
+                shopping.tap()
+                sleep(1)
+                snapshot("24b-menu-courses")
+            }
+        }
+        // Retour sur « Idées » pour les prochaines fois.
+        let ideas = app.segmentedControls.buttons["Idées"].firstMatch
+        if ideas.exists { ideas.tap() }
+    }
+
+    /// Passe un article en « acheté » (case à cocher, ou glissement vers la droite puis « Acheté »)
+    /// et répond à la question du montant si elle vient.
+    private func markBought(_ app: XCUIApplication, _ name: String, amount: String?, swipe: Bool) {
         let label = app.staticTexts[name].firstMatch
         guard label.waitForExistence(timeout: 5) else { return }
         if !label.isHittable { reveal(label, in: app) }
-        label.swipeRight()
-        let bought = app.buttons["Acheté"].firstMatch
-        guard bought.waitForExistence(timeout: 3) else {
-            dump(app, "13d-achete-introuvable-\(name)")
-            return
+        var done = false
+        if swipe {
+            label.swipeRight()
+            let bought = app.buttons["Acheté"].firstMatch
+            if bought.waitForExistence(timeout: 3) {
+                bought.tap()
+                done = true
+            } else {
+                dump(app, "13d-glisser-sans-effet")
+            }
         }
-        bought.tap()
+        if !done {
+            // La case de la même ligne que le nom de l'article.
+            let boxes = app.buttons.matching(NSPredicate(format: "label == %@", "Cocher : acheté")).allElementsBoundByIndex
+            guard let box = boxes.min(by: { abs($0.frame.midY - label.frame.midY) < abs($1.frame.midY - label.frame.midY) }) else {
+                dump(app, "13d-case-introuvable")
+                return
+            }
+            box.tap()
+        }
         let field = app.alerts.firstMatch.textFields.firstMatch
         if field.waitForExistence(timeout: 3) {
             field.typeText(amount ?? "1")
@@ -385,14 +503,16 @@ final class LemwincherUITests: XCTestCase {
             return
         }
         open.tap()
-        let aldi = element(app, "site-aldi")
-        guard aldi.waitForExistence(timeout: 10) else { return }
-        // Aldi est en bout de barre : on la fait défiler (sans demander si le bouton est visible,
-        // ce qui échoue pour un bouton hors écran).
-        let bar = element(app, "siteBar")
-        bar.swipeLeft()
-        bar.swipeLeft()
-        sleep(1)
+        // Aldi est en bout de barre : on passe par le menu du titre.
+        let picker = element(app, "sitePicker")
+        guard picker.waitForExistence(timeout: 10) else { return }
+        picker.tap()
+        // L'entrée du menu (pas la pastille « Aldi » de la barre, hors écran).
+        let aldi = app.buttons.matching(NSPredicate(format: "label == 'Aldi' AND identifier != 'site-aldi'")).firstMatch
+        guard aldi.waitForExistence(timeout: 5) else {
+            dump(app, "19-menu-sites")
+            return
+        }
         aldi.tap()
         // Pas de requête pendant le chargement de la page (arbre d'accessibilité du site très lourd).
         sleep(25)

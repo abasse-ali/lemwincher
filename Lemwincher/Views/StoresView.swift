@@ -23,6 +23,7 @@ struct StoresView: View {
             .navigationTitle("Autour de moi")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) { SettingsButton() }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         model.locationManager.request()

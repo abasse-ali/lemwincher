@@ -22,12 +22,12 @@ struct OnboardingView: View {
         Page(icon: "chart.bar.fill", color: Color.blue,
              title: "Des prix réels, partout en France",
              text: "Uniquement de vrais prix, relevés en magasin par des milliers de consommateurs (Open Prices), avec le magasin et la date. Quand personne n'a relevé un produit près de chez vous, l'app montre le prix relevé dans le magasin de la même enseigne le plus proche."),
-        Page(icon: "fuelpump.fill", color: Color.orange,
-             title: "Carburant, rappels et alertes",
-             text: "Trouvez la station la moins chère (prix officiels), soyez prévenu si un produit de votre liste est rappelé, et suivez les produits dont vous attendez une baisse de prix."),
+        Page(icon: "fork.knife", color: Color.orange,
+             title: "Des recettes, pas à pas",
+             text: "Des idées de plats sans porc selon votre liste, un plat composé sur mesure, le menu de la semaine, puis la cuisine guidée étape par étape : minuteurs (même dans la Dynamic Island), lecture à voix haute, écran toujours allumé."),
         Page(icon: "location.fill", color: Color.brand,
              title: "Autour de vous",
-             text: "Autorisez la localisation pour trouver les magasins proches. Vous pourrez aussi indiquer l'adresse de votre domicile dans Réglages. Vos données restent sur votre iPhone."),
+             text: "Autorisez la localisation pour trouver les magasins et les stations-service proches. Vous pourrez aussi indiquer votre domicile dans les Réglages (⚙︎ en haut à gauche). Vos données restent sur votre iPhone."),
     ]
 
     var body: some View {

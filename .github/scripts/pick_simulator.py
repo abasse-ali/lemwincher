@@ -20,7 +20,9 @@ runtimes = [r for r in devices if "iOS" in r and version(r) <= sdk]
 for runtime in sorted(runtimes, key=version, reverse=True):
     phones = [d for d in devices[runtime] if d.get("isAvailable", True) and d["name"].startswith("iPhone")]
     # Un modèle standard (ex. iPhone 16) plutôt qu'un Pro Max, un Plus ou un SE.
-    phones.sort(key=lambda d: (any(word in d["name"] for word in ("Pro", "Plus", "SE", "Max")), d["name"]))
+    # L'iPhone 15 de l'utilisateur d'abord s'il existe (sinon l'iPhone 16 : même écran 6,1" et Dynamic Island).
+    phones.sort(key=lambda d: (any(word in d["name"] for word in ("Pro", "Plus", "SE", "Max")),
+                               d["name"] != "iPhone 15", d["name"]))
     if phones:
         print(phones[0]["udid"])
         sys.exit(0)
