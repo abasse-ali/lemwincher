@@ -126,17 +126,28 @@ final class AppModel {
                                               radiusKm: radius)
         guard generation == refreshGeneration else { return }
 
-        if result.fromOSM {
+        if result.complete {
             applyStores(result.stores, source: result.source)
             StoreCache.save(StoreCacheEntry(lat: ref.coordinate.latitude, lon: ref.coordinate.longitude,
                                             radiusKm: radius, date: Date(), stores: result.stores,
                                             countryCode: result.countryCode))
         } else if let cached = StoreCache.load(near: ref, radiusKm: radius), !cached.stores.isEmpty {
-            // OpenStreetMap saturé : on garde la dernière liste complète, mise à jour avec Open Prices.
-            applyStores(StoreFinder.merge(cached: cached.stores, fresh: result.stores, center: ref),
-                        source: cacheSource(cached))
+            // Overpass saturé : on garde la dernière liste complète (horaires, téléphones), complétée par
+            // les magasins proches trouvés par Photon et les données fraîches d'Open Prices.
+            let merged = StoreFinder.merge(cached: cached.stores, fresh: result.stores, center: ref)
+            applyStores(merged, source: cacheSource(cached))
+            if result.fromOSM && merged.count > cached.stores.count {
+                StoreCache.save(StoreCacheEntry(lat: cached.lat, lon: cached.lon, radiusKm: cached.radiusKm,
+                                                date: cached.date, stores: merged,
+                                                countryCode: cached.countryCode ?? result.countryCode))
+            }
         } else {
             applyStores(result.stores, source: result.source)
+            if result.fromOSM {
+                StoreCache.save(StoreCacheEntry(lat: ref.coordinate.latitude, lon: ref.coordinate.longitude,
+                                                radiusKm: radius, date: Date(), stores: result.stores,
+                                                countryCode: result.countryCode))
+            }
         }
         if let code = result.countryCode { detectedCountry = code }
         if stores.isEmpty {

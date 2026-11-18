@@ -3,16 +3,19 @@ import CoreLocation
 import MapKit
 
 /// Trouve les supermarchés / supérettes autour d'un point.
-/// 1. OpenStreetMap (Overpass) : tous les magasins, mêmes identifiants qu'Open Prices.
-/// 2. Open Prices : magasins où des prix ont été relevés (nombre de prix, logo, pays).
-/// 3. Plans d'Apple en secours si OpenStreetMap ne répond pas.
+/// 1. OpenStreetMap via Overpass : tous les magasins avec horaires et contacts, mêmes identifiants qu'Open Prices.
+/// 2. OpenStreetMap via Photon, en même temps : les magasins les plus proches, même quand Overpass est saturé.
+/// 3. Open Prices : magasins où des prix ont été relevés (nombre de prix, logo, pays).
+/// 4. Plans d'Apple en secours si OpenStreetMap ne répond pas du tout.
 enum StoreFinder {
     struct Result {
         var stores: [Store]
         var source: String
         var countryCode: String?
-        /// La liste complète d'OpenStreetMap a été reçue (sinon : Open Prices / Plans seulement).
+        /// Des magasins OpenStreetMap ont été reçus (Overpass ou Photon ; sinon : Open Prices / Plans seulement).
         var fromOSM: Bool = true
+        /// La liste complète d'Overpass a été reçue (horaires, téléphones…) ; Photon seul ne donne que les plus proches.
+        var complete: Bool = true
     }
 
     /// Au-delà, on ne garde que les supérettes les plus proches (tous les supermarchés sont conservés).
@@ -20,14 +23,21 @@ enum StoreFinder {
 
     static func nearby(lat: Double, lon: Double, radiusKm: Double) async -> Result {
         async let osmTask = overpassStores(lat: lat, lon: lon, radiusMeters: Int(radiusKm * 1000))
+        async let photonTask = photonStores(lat: lat, lon: lon, radiusKm: radiusKm)
         async let openPricesTask = openPricesLocations(lat: lat, lon: lon, radiusKm: radiusKm)
-        let osmResult = await osmTask
+        let overpassResult = await osmTask
+        let photonResult = await photonTask
         let openPricesResult = await openPricesTask
 
         var merged: [String: Store] = [:]
-        for store in osmResult ?? [] {
+        // Photon d'abord, puis Overpass (plus complet : horaires, téléphone, enseigne) par-dessus.
+        for store in photonResult ?? [] {
             merged[store.id] = store
         }
+        for store in overpassResult ?? [] {
+            merged[store.id] = store
+        }
+        let osmResult: [Store]? = (overpassResult == nil && photonResult == nil) ? nil : Array(merged.values)
         for location in openPricesResult {
             guard let store = location.asStore else { continue }
             if var existing = merged[store.id] {
@@ -40,7 +50,9 @@ enum StoreFinder {
             }
         }
 
-        var source = "OpenStreetMap et Open Prices"
+        var source = overpassResult == nil && photonResult != nil
+            ? "OpenStreetMap (Photon) et Open Prices"
+            : "OpenStreetMap et Open Prices"
         if osmResult == nil || merged.isEmpty {
             let appleResult = await appleStores(lat: lat, lon: lon, radiusKm: radiusKm)
             for store in appleResult {
@@ -74,7 +86,8 @@ enum StoreFinder {
         }
         let country = countryCounts.max { $0.value < $1.value }?.key
 
-        return Result(stores: kept, source: source, countryCode: country, fromOSM: osmResult != nil)
+        return Result(stores: kept, source: source, countryCode: country, fromOSM: osmResult != nil,
+                      complete: overpassResult != nil)
     }
 
     /// Complète une liste en cache avec les données fraîches d'Open Prices (nombre de prix, logos, nouveaux magasins).
@@ -118,9 +131,39 @@ enum StoreFinder {
     private static func overpassStores(lat: Double, lon: Double, radiusMeters: Int) async -> [Store]? {
         let filter = "[\"shop\"~\"^(supermarket|convenience|hypermarket|wholesale|general)$\"]"
         let around = "(around:\(radiusMeters),\(String(format: "%.6f", lat)),\(String(format: "%.6f", lon)))"
-        let query = "[out:json][timeout:25];(node\(filter)\(around);way\(filter)\(around););out center tags;"
+        // Points, bâtiments et aussi « relations » (magasins dessinés comme des zones à plusieurs contours).
+        let query = "[out:json][timeout:25];(node\(filter)\(around);way\(filter)\(around);relation\(filter)\(around););out center tags;"
         guard let response = await overpass(query: query, timeouts: [22, 12]) else { return nil }
         return response.elements.compactMap(\.asStore)
+    }
+
+    // MARK: Photon (OpenStreetMap, komoot)
+
+    /// Supermarchés, hypermarchés et supérettes les plus proches (50 au plus par type), via Photon.
+    /// nil si Photon ne répond pas.
+    private static func photonStores(lat: Double, lon: Double, radiusKm: Double) async -> [Store]? {
+        async let supermarkets = photon(tag: "shop:supermarket", lat: lat, lon: lon, radiusKm: radiusKm)
+        async let hypermarkets = photon(tag: "shop:hypermarket", lat: lat, lon: lon, radiusKm: radiusKm)
+        async let convenience = photon(tag: "shop:convenience", lat: lat, lon: lon, radiusKm: radiusKm)
+        let lists = await [supermarkets, hypermarkets, convenience]
+        if lists.allSatisfy({ $0 == nil }) { return nil }
+        let center = CLLocation(latitude: lat, longitude: lon)
+        return lists.compactMap { $0 }.flatMap { $0 }
+            .filter { $0.location.distance(from: center) <= radiusKm * 1000 }
+    }
+
+    private static func photon(tag: String, lat: Double, lon: Double, radiusKm: Double) async -> [Store]? {
+        let query = [
+            "lat": String(format: "%.6f", lat),
+            "lon": String(format: "%.6f", lon),
+            "radius": String(Int(min(max(radiusKm, 1), 20).rounded(.up))),
+            "limit": "50",
+            "osm_tag": tag,
+            "lang": "fr",
+        ]
+        guard let response: PhotonResponse = try? await HTTP.get("https://photon.komoot.io/reverse",
+                                                                  query: query, snakeCase: false) else { return nil }
+        return response.features.compactMap(\.asStore)
     }
 
     /// Envoie une requête Overpass au serveur principal, puis au miroir en cas d'échec.
@@ -152,21 +195,24 @@ enum StoreFinder {
 
     // MARK: Plans d'Apple
 
+    /// Plans ne renvoie qu'une partie des commerces d'une grande zone : on cherche aussi tout près (1,5 km)
+    /// pour ne jamais rater les magasins du quartier.
     @MainActor
     private static func appleStores(lat: Double, lon: Double, radiusKm: Double) async -> [Store] {
         let center = CLLocationCoordinate2D(latitude: lat, longitude: lon)
-        let request = MKLocalPointsOfInterestRequest(center: center, radius: min(radiusKm * 1000, 20_000))
-        request.pointOfInterestFilter = MKPointOfInterestFilter(including: [.foodMarket])
-        do {
-            let response = try await MKLocalSearch(request: request).start()
-            return response.mapItems.map { item in
-                appleStore(name: item.name ?? "Magasin",
-                           address: item.placemark.title,
-                           coordinate: item.placemark.coordinate)
+        var found: [String: Store] = [:]
+        for radius in [min(1500, radiusKm * 1000), min(radiusKm * 1000, 20_000)] {
+            let request = MKLocalPointsOfInterestRequest(center: center, radius: radius)
+            request.pointOfInterestFilter = MKPointOfInterestFilter(including: [.foodMarket])
+            guard let response = try? await MKLocalSearch(request: request).start() else { continue }
+            for item in response.mapItems {
+                let store = appleStore(name: item.name ?? "Magasin",
+                                       address: item.placemark.title,
+                                       coordinate: item.placemark.coordinate)
+                found[store.id] = store
             }
-        } catch {
-            return []
         }
+        return Array(found.values)
     }
 
     /// Plans classe dans « alimentation » aussi bien les supermarchés que les cavistes ou salons de thé :
@@ -231,6 +277,86 @@ struct OverpassResponse: Decodable {
         case "wholesale": return "Grossiste"
         case "general": return "Épicerie"
         default: return "Commerce"
+        }
+    }
+}
+
+// MARK: - Réponse Photon (GeoJSON)
+
+struct PhotonResponse: Decodable {
+    let features: [Feature]
+
+    private enum CodingKeys: String, CodingKey { case features }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        features = ((try? c.decode([Lossy<Feature>].self, forKey: .features)) ?? []).compactMap(\.value)
+    }
+
+    struct Feature: Decodable {
+        let geometry: Geometry?
+        let properties: Properties
+
+        var asStore: Store? {
+            guard let coordinates = geometry?.coordinates, coordinates.count >= 2,
+                  let id = properties.osmId,
+                  let type = PhotonResponse.osmType(properties.osmType) else { return nil }
+            let lon = coordinates[0]
+            let lat = coordinates[1]
+            let name = properties.name?.nilIfBlank
+            let chain = Chain.key(brand: nil, name: name)
+            let street = [properties.housenumber, properties.street].compactMap { $0?.nilIfBlank }.joined(separator: " ")
+            let address = [street.nilIfBlank, properties.city?.nilIfBlank].compactMap { $0 }.joined(separator: ", ")
+            return Store(id: "\(type):\(id)",
+                         name: name ?? OverpassResponse.label(for: properties.osmValue),
+                         brand: chain.flatMap { Chain.displayName(for: $0) },
+                         kind: properties.osmValue,
+                         address: address.nilIfBlank,
+                         lat: lat,
+                         lon: lon,
+                         priceCount: nil,
+                         logoURL: nil)
+        }
+    }
+
+    struct Geometry: Decodable {
+        /// [longitude, latitude]
+        let coordinates: [Double]
+    }
+
+    struct Properties: Decodable {
+        let osmType: String?
+        let osmId: Int?
+        let osmValue: String?
+        let name: String?
+        let housenumber: String?
+        let street: String?
+        let city: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case osmType = "osm_type", osmId = "osm_id", osmValue = "osm_value", name, housenumber, street, city
+        }
+
+        // Lecture tolérante : un champ inattendu ne doit pas faire perdre tous les magasins.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            osmType = c.lossyString(.osmType)
+            osmId = c.lossyInt(.osmId)
+            osmValue = c.lossyString(.osmValue)
+            name = c.lossyString(.name)
+            housenumber = c.lossyString(.housenumber)
+            street = c.lossyString(.street)
+            city = c.lossyString(.city)
+        }
+    }
+
+    /// "N" / "W" / "R" -> identifiants OpenStreetMap de l'app (mêmes qu'Overpass et Open Prices).
+    static func osmType(_ code: String?) -> String? {
+        switch code?.uppercased() {
+        case "N": return "NODE"
+        case "W": return "WAY"
+        case "R": return "RELATION"
+        default: return nil
         }
     }
 }

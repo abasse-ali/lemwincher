@@ -184,6 +184,50 @@ final class StoreSourcesTests: XCTestCase {
         XCTAssertEqual(stores[1].name, "Supérette")
     }
 
+    /// Réponse réelle de Photon (OpenStreetMap) autour de l'Aldi de La Faourette, à Toulouse.
+    func testPhotonFeaturesBecomeStoresWithOpenStreetMapIDs() throws {
+        let json = """
+        {"type": "FeatureCollection", "features": [
+          {"type": "Feature", "geometry": {"type": "Point", "coordinates": [1.4136288, 43.5810432]},
+           "properties": {"osm_type": "N", "osm_id": 11247032479, "osm_key": "shop", "osm_value": "supermarket",
+                          "name": "Aldi", "street": "Place Geneviève Anthonioz De Gaulle", "city": "Toulouse"}},
+          {"type": "Feature", "geometry": {"type": "Point", "coordinates": [1.4161, 43.5862]},
+           "properties": {"osm_type": "W", "osm_id": 52305070, "osm_value": "supermarket", "name": "Intermarché Super",
+                          "housenumber": "389", "street": "Route de Saint-Simon", "city": "Toulouse"}},
+          {"type": "Feature", "geometry": {"type": "Point", "coordinates": [1.42, 43.58]},
+           "properties": {"osm_type": "R", "osm_id": 777, "osm_value": "convenience"}},
+          {"type": "Feature", "geometry": {"type": "Point", "coordinates": [1.42, 43.58]},
+           "properties": {"osm_type": "X", "osm_id": 1, "osm_value": "supermarket", "name": "Inconnu"}},
+          {"type": "Feature", "properties": {"osm_type": "N", "osm_id": 2, "name": "Sans position"}},
+          "pas un objet"
+        ]}
+        """
+        let response = try JSONDecoder().decode(PhotonResponse.self, from: Fixtures.json(json))
+        let stores = response.features.compactMap(\.asStore)
+        XCTAssertEqual(stores.map(\.id), ["NODE:11247032479", "WAY:52305070", "RELATION:777"],
+                       "mêmes identifiants qu'Overpass et Open Prices ; type inconnu ou sans position écarté")
+
+        let aldi = stores[0]
+        XCTAssertEqual(aldi.name, "Aldi")
+        XCTAssertEqual(aldi.lat, 43.5810432, accuracy: 1e-9)
+        XCTAssertEqual(aldi.lon, 1.4136288, accuracy: 1e-9)
+        XCTAssertTrue(aldi.isSupermarket)
+        XCTAssertEqual(aldi.chainKey, "aldi")
+        XCTAssertEqual(aldi.address, "Place Geneviève Anthonioz De Gaulle, Toulouse")
+        XCTAssertEqual(aldi.osmId, 11_247_032_479)
+
+        XCTAssertEqual(stores[1].address, "389 Route de Saint-Simon, Toulouse")
+        XCTAssertEqual(stores[1].chainKey, "intermarche")
+        XCTAssertEqual(stores[2].name, "Supérette", "sans nom : le type de commerce")
+        XCTAssertFalse(stores[2].isSupermarket)
+    }
+
+    func testOverpassRelationsAreStoresToo() throws {
+        let json = #"{"elements": [{"type": "relation", "id": 9, "center": {"lat": 43.6, "lon": 1.44}, "tags": {"shop": "supermarket", "name": "Auchan"}}]}"#
+        let response = try JSONDecoder().decode(OverpassResponse.self, from: Fixtures.json(json))
+        XCTAssertEqual(response.elements.compactMap(\.asStore).first?.id, "RELATION:9")
+    }
+
     func testAppleMapsResultsOnlyCountKnownChainsAsSupermarkets() {
         let coordinate = CLLocationCoordinate2D(latitude: 43.6, longitude: 1.44)
         let carrefour = StoreFinder.appleStore(name: "Carrefour City Capitole", address: nil, coordinate: coordinate)
