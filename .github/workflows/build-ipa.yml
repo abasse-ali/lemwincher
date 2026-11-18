@@ -69,16 +69,26 @@ jobs:
         continue-on-error: true
         timeout-minutes: 35
         run: |
-          set -o pipefail
-          xcodebuild test-without-building \
-            -project Lemwincher.xcodeproj \
-            -scheme Lemwincher \
-            -destination "id=${{ steps.sim.outputs.udid }}" \
-            -derivedDataPath build-sim \
-            -only-testing:LemwincherUITests \
-            -resultBundlePath results/ui-tests.xcresult \
-            2>&1 | tee ui-tests.log | grep -E "Test Case .*(passed|failed)|error:|Executed" || true
-          grep -q "TEST EXECUTE SUCCEEDED" ui-tests.log
+          UDID="${{ steps.sim.outputs.udid }}"
+          # Le simulateur de GitHub rate parfois son démarrage (« AX loaded notification ») : on le relance une fois.
+          for attempt in 1 2; do
+            rm -rf results/ui-tests.xcresult
+            xcodebuild test-without-building \
+              -project Lemwincher.xcodeproj \
+              -scheme Lemwincher \
+              -destination "id=$UDID" \
+              -derivedDataPath build-sim \
+              -only-testing:LemwincherUITests \
+              -resultBundlePath results/ui-tests.xcresult \
+              2>&1 | tee ui-tests.log | grep -E "Test Case .*(passed|failed)|error:|Executed" || true
+            if grep -q "TEST EXECUTE SUCCEEDED" ui-tests.log; then exit 0; fi
+            if ! grep -q "failed to initialize for UI testing" ui-tests.log; then exit 1; fi
+            echo "Simulateur pas prêt : redémarrage puis nouvel essai"
+            xcrun simctl shutdown "$UDID" || true
+            xcrun simctl boot "$UDID" || true
+            sleep 30
+          done
+          exit 1
 
       - name: Rassembler les captures d'écran
         if: always()
