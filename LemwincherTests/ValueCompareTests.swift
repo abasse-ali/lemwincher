@@ -62,6 +62,24 @@ final class ValueCompareTests: XCTestCase {
         XCTAssertNil(ValueCompare.defaultBasis([unknown]))
     }
 
+    func testOutlierPricesAreSetApart() throws {
+        func milk(_ id: String, _ price: Double, manual: Bool = false) -> ValueItem {
+            ValueItem(id: id, product: .custom(named: "Lait demi-écrémé 1 L"), price: price, currency: "EUR",
+                      isManual: manual)
+        }
+        // Un pack de 6 enregistré comme 1 L : 6,39 €/L au milieu de laits autour de 1 €/L.
+        let ranking = ValueCompare.rank([milk("a", 0.92), milk("b", 1.08), milk("c", 1.15), milk("d", 6.39)],
+                                        basis: .litre)
+        XCTAssertEqual(ranking.ranked.map(\.id), ["a", "b", "c"])
+        XCTAssertEqual(ranking.suspicious.map(\.id), ["d"])
+        let summary = try XCTUnwrap(ValueCompare.summary(ranking))
+        XCTAssertTrue(summary.contains(Fmt.price(1.15, "EUR")), "le résumé ignore le prix aberrant : \(summary)")
+        // Noté à la main : jamais écarté. Deux produits seulement : rien n'est écarté.
+        XCTAssertTrue(ValueCompare.rank([milk("a", 0.92), milk("b", 1.08), milk("m", 6.39, manual: true)],
+                                        basis: .litre).suspicious.isEmpty)
+        XCTAssertTrue(ValueCompare.rank([milk("a", 0.92), milk("d", 6.39)], basis: .litre).suspicious.isEmpty)
+    }
+
     func testSuggestionsSortedByValue() {
         func suggestion(_ code: String, _ name: String, _ quantity: String?, _ price: Double?) -> ProductSuggestion {
             var product = Product(code: code, name: name)

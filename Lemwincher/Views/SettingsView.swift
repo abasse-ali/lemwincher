@@ -128,9 +128,22 @@ struct SettingsView: View {
                     NavigationLink {
                         LogView()
                     } label: {
-                        Label("Journal de l'app", systemImage: "list.bullet.rectangle.portrait")
+                        let problems = AppLog.shared.recentProblems()
+                        HStack {
+                            Label("Journal de l'app", systemImage: "list.bullet.rectangle.portrait")
+                            Spacer()
+                            if problems > 0 {
+                                // Pastille rouge avant le chevron : problèmes des dernières 24 h.
+                                Text("\(problems)")
+                                    .font(.footnote.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 7)
+                                    .frame(minWidth: 22, minHeight: 22)
+                                    .background(Color.red, in: Capsule())
+                                    .accessibilityLabel("\(problems) problème\(problems > 1 ? "s" : "") récent\(problems > 1 ? "s" : "")")
+                            }
+                        }
                     }
-                    .badge(AppLog.shared.recentProblems())
                     .accessibilityIdentifier("logLink")
                 } header: {
                     Text("Assistance")

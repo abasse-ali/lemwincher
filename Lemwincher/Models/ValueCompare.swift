@@ -151,11 +151,17 @@ enum ValueCompare {
         return weightCount >= piece ? weight : .piece
     }
 
+    /// Au-delà de 4 fois le prix à l'unité médian (ou en deçà du quart), un prix est « à vérifier ».
+    static let outlierFactor = 4.0
+
     /// Classement pour une unité.
     struct Ranking {
         let basis: ValueBasis
         /// Du plus avantageux au moins avantageux.
         let ranked: [ValueItem]
+        /// Prix à l'unité très éloigné des autres (lot de 6 enregistré comme 1 L, prix d'une seule pièce
+        /// pour un paquet…) : à part, pour ne pas fausser le classement ni le résumé.
+        var suspicious: [ValueItem] = []
         /// Contenance inconnue pour cette unité : du moins cher au plus cher.
         let others: [ValueItem]
 
@@ -171,7 +177,7 @@ enum ValueCompare {
     }
 
     static func rank(_ items: [ValueItem], basis: ValueBasis) -> Ranking {
-        let ranked = items
+        let priced = items
             .compactMap { item -> (item: ValueItem, unit: Double)? in
                 guard let unit = item.unitPrice(basis) else { return nil }
                 return (item: item, unit: unit)
@@ -180,9 +186,25 @@ enum ValueCompare {
                 if abs(a.unit - b.unit) > 0.0001 { return a.unit < b.unit }
                 return a.item.price < b.item.price
             }
-            .map(\.item)
+        // Les produits notés à la main ne sont jamais écartés : c'est vous qui les avez saisis.
+        let flagged = Set(outlierIDs(priced.map { (id: $0.item.id, unit: $0.unit, manual: $0.item.isManual) }))
         let others = items.filter { $0.unitPrice(basis) == nil }.sorted { $0.price < $1.price }
-        return Ranking(basis: basis, ranked: ranked, others: others)
+        return Ranking(basis: basis,
+                       ranked: priced.filter { !flagged.contains($0.item.id) }.map(\.item),
+                       suspicious: priced.filter { flagged.contains($0.item.id) }.map(\.item),
+                       others: others)
+    }
+
+    /// Prix à l'unité plus de 4 fois au-dessus (ou en dessous) de la médiane, dès 3 produits comparables.
+    static func outlierIDs(_ entries: [(id: String, unit: Double, manual: Bool)]) -> [String] {
+        guard entries.count >= 3 else { return [] }
+        let units = entries.map(\.unit).sorted()
+        let middle = units.count / 2
+        let median = units.count % 2 == 1 ? units[middle] : (units[middle - 1] + units[middle]) / 2
+        guard median > 0 else { return [] }
+        return entries
+            .filter { !$0.manual && ($0.unit > median * outlierFactor || $0.unit < median / outlierFactor) }
+            .map(\.id)
     }
 
     /// « 7,99 €/kg », « 1,10 €/L », « 0,80 € la pièce ».
@@ -276,7 +298,7 @@ extension SuggestionEngine {
         for suggestion in suggestions where suggestion.offer != nil && byID[suggestion.id] == nil {
             byID[suggestion.id] = suggestion
         }
-        let priced = (ranking.ranked + ranking.others).compactMap { byID[$0.id] }
+        let priced = (ranking.ranked + ranking.suspicious + ranking.others).compactMap { byID[$0.id] }
         return priced + suggestions.filter { $0.offer == nil }
     }
 }

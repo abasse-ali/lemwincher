@@ -14,6 +14,7 @@ struct ValueCompareView: View {
     /// Unité choisie par l'utilisateur (sinon : au kilo, ou à la pièce si le poids manque).
     @State private var chosenBasis: ValueBasis?
     @State private var showEditor = false
+    @State private var pendingEntry: ManualCompareEntry?
 
     init(initialQuery: String = "") {
         _draft = State(initialValue: initialQuery)
@@ -83,6 +84,9 @@ struct ValueCompareView: View {
                 } footer: {
                     Text(basisFooter(basis))
                 }
+                if !ranking.suspicious.isEmpty {
+                    suspiciousSection(ranking)
+                }
                 if !ranking.others.isEmpty {
                     othersSection(ranking.others, basis: basis)
                 }
@@ -98,11 +102,10 @@ struct ValueCompareView: View {
         }
         .navigationTitle("Comparer")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showEditor) {
+        .sheet(isPresented: $showEditor, onDismiss: addPendingEntry) {
             ManualCompareEditor(currency: model.settings.currency) { entry in
-                model.state.compareEntries.append(entry)
-                Log.info(.compare, "Produit noté : \(entry.name) à \(Fmt.price(entry.price, entry.currency))",
-                         details: entry.item.pack.text ?? "contenance inconnue")
+                // Ajouté une fois la feuille fermée : la liste ne se met pas à jour pendant l'animation.
+                pendingEntry = entry
             }
         }
         .task(id: query) {
@@ -160,6 +163,20 @@ struct ValueCompareView: View {
             NavigationLink(value: item.product) {
                 content
             }
+        }
+    }
+
+    private func suspiciousSection(_ ranking: ValueCompare.Ranking) -> some View {
+        Section {
+            ForEach(ranking.suspicious) { item in
+                NavigationLink(value: item.product) {
+                    ValueRow(item: item, basis: ranking.basis, flagged: true)
+                }
+            }
+        } header: {
+            Label("Prix à vérifier (\(ranking.suspicious.count))", systemImage: "exclamationmark.triangle")
+        } footer: {
+            Text("Prix \(ranking.basis.phrase) très éloigné des autres : la contenance ou le prix ont sans doute été mal enregistrés (un lot compté comme une seule unité…). Ces produits ne sont pas pris en compte dans le classement.")
         }
     }
 
@@ -236,6 +253,16 @@ struct ValueCompareView: View {
     private func remove(_ item: ValueItem) {
         model.state.compareEntries.removeAll { "manual:" + $0.id.uuidString == item.id }
     }
+
+    private func addPendingEntry() {
+        guard let entry = pendingEntry else { return }
+        pendingEntry = nil
+        withAnimation {
+            model.state.compareEntries.append(entry)
+        }
+        Log.info(.compare, "Produit noté : \(entry.name) à \(Fmt.price(entry.price, entry.currency))",
+                 details: entry.item.pack.text ?? "contenance inconnue")
+    }
 }
 
 /// Une ligne du classement : rang, photo, nom, contenance, prix à l'unité et prix payé.
@@ -245,6 +272,8 @@ struct ValueRow: View {
     var basis: ValueBasis? = nil
     var best = false
     var extraPercent: Int? = nil
+    /// Prix à l'unité aberrant (section « Prix à vérifier »).
+    var flagged = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -294,7 +323,11 @@ struct ValueRow: View {
                     Text(Fmt.price(item.price, item.currency))
                         .font(.subheadline.bold().monospacedDigit())
                 }
-                if best {
+                if flagged {
+                    Text("À vérifier")
+                        .font(.caption2.bold())
+                        .foregroundStyle(Color.orange)
+                } else if best {
                     Text("Le plus avantageux")
                         .font(.caption2.bold())
                         .foregroundStyle(Color.brand)

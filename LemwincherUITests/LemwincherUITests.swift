@@ -300,7 +300,7 @@ final class LemwincherUITests: XCTestCase {
             sleep(2)
             addCompareEntry(app, name: "10 steaks hachés surgelés", price: "7.99", shot: "12d-comparer-saisie")
             addCompareEntry(app, name: "2 steaks hachés", price: "3.99")
-            sleep(1)
+            sleep(2)
             snapshot("12e-comparer-steaks")
             let compareQuery = app.textFields["compareQuery"]
             if compareQuery.waitForExistence(timeout: 3) {

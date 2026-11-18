@@ -172,7 +172,8 @@ struct LogRow: View {
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(Fmt.join(entry.category.rawValue,
-                                  entry.date.formatted(.dateTime.hour().minute().second()),
+                                  entry.date.formatted(.dateTime.hour().minute().second()
+                                                        .locale(Locale(identifier: "fr_FR"))),
                                   entry.count > 1 ? "×\(entry.count)" : nil))
                         .font(.caption)
                         .foregroundStyle(.secondary)
