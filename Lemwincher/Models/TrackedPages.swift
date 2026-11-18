@@ -19,6 +19,22 @@ struct TrackedPage: Identifiable, Codable, Hashable {
     var lastChanges: Int = 0
     var lastError: String? = nil
 
+    /// Nom d'un rayon : « Recherche « œufs » » pour une recherche (le titre du site dit juste « Recherche »),
+    /// sinon le titre de la page.
+    static func displayTitle(pageTitle: String?, url: URL, siteName: String) -> String {
+        let searchKeys: Set<String> = ["q", "query", "text", "s", "search", "keyword"]
+        var query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+            .first { searchKeys.contains($0.name.lowercased()) }?.value
+        if query == nil, url.pathComponents.contains(where: { ["search", "recherche"].contains($0.lowercased()) }),
+           let last = url.pathComponents.last, !["search", "recherche"].contains(last.lowercased()) {
+            query = last.removingPercentEncoding ?? last
+        }
+        if let query = query?.trimmed.nilIfBlank {
+            return "Recherche « \(query) »"
+        }
+        return pageTitle?.trimmed.nilIfBlank ?? siteName
+    }
+
     /// Une mise à jour automatique est due (12 h depuis la dernière lecture).
     func isDue(now: Date = Date(), every interval: TimeInterval = 12 * 3600) -> Bool {
         autoUpdate && now.timeIntervalSince(lastChecked) >= interval

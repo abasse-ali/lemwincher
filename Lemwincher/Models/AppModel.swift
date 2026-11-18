@@ -698,7 +698,8 @@ final class AppModel {
             state.trackedPages[index] = page
         } else {
             state.trackedPages.append(TrackedPage(url: pageURL.absoluteString,
-                                                  title: pageTitle?.nilIfBlank ?? site.name,
+                                                  title: TrackedPage.displayTitle(pageTitle: pageTitle, url: pageURL,
+                                                                                  siteName: site.name),
                                                   siteName: site.name,
                                                   store: store,
                                                   productCodes: Array(Set(codes)).sorted(),

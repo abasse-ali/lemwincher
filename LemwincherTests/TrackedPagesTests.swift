@@ -61,6 +61,19 @@ final class TrackedPagesTests: XCTestCase {
         XCTAssertTrue(next.updates[1].isRise)
     }
 
+    func testSearchPagesAreNamedAfterTheSearch() throws {
+        func title(_ url: String, _ pageTitle: String? = "Recherche") throws -> String {
+            TrackedPage.displayTitle(pageTitle: pageTitle, url: try XCTUnwrap(URL(string: url)), siteName: "Aldi")
+        }
+        XCTAssertEqual(try title("https://www.aldi.fr/recherche.html?query=%C5%93ufs"), "Recherche « œufs »")
+        XCTAssertEqual(try title("https://courses.monoprix.fr/search?q=lait"), "Recherche « lait »")
+        XCTAssertEqual(try title("https://www.chronodrive.com/search/beurre%20doux"), "Recherche « beurre doux »")
+        XCTAssertEqual(try title("https://www.aldi.fr/produits/produits-laitiers/creme-beurre.html",
+                                 "Crèmes et beurres à petits prix - ALDI"),
+                       "Crèmes et beurres à petits prix - ALDI", "un rayon garde le titre de sa page")
+        XCTAssertEqual(try title("https://www.aldi.fr/produits.html", nil), "Aldi")
+    }
+
     func testTrackedPageScheduleAndTitle() throws {
         let page = TrackedPage(url: "https://www.aldi.fr/produits/produits-laitiers/creme-beurre.html",
                                title: "Crèmes et beurres à petits prix - ALDI", siteName: "Aldi",
