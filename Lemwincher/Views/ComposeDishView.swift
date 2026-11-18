@@ -239,11 +239,11 @@ struct WeekMenuView: View {
                     .disabled(missing.isEmpty)
                     .accessibilityIdentifier("addWeekShopping")
                     if let message {
-                        HStack {
+                        VStack(alignment: .leading, spacing: 6) {
                             Label(message, systemImage: "checkmark.circle.fill")
                                 .foregroundStyle(Color.brand)
-                            Spacer()
-                            Button("Voir ma liste") { model.selectedTab = .list }
+                            Button("Voir ma liste →") { model.selectedTab = .list }
+                                .fontWeight(.semibold)
                                 .buttonStyle(.borderless)
                         }
                         .font(.subheadline)

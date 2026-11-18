@@ -254,7 +254,8 @@ struct RecipeCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
-                HStack(spacing: 12) {
+                // Pastilles qui passent à la ligne plutôt que d'être coupées.
+                FlowLayout(spacing: 10) {
                     InfoPill(text: RecipeFormat.duration(recipe.minutes), symbol: "clock")
                     if recipe.isVegetarian {
                         InfoPill(text: "Végétarien", symbol: "leaf.fill", tint: .green)

@@ -37,8 +37,19 @@ enum DietFilter {
         "colin", "poisson", "poissons", "crevette", "crevettes", "sardine", "sardines", "maquereau", "moules", "anchois",
     ]
 
+    /// Réponses déjà calculées (les listes de produits sont filtrées à chaque affichage).
+    private static var porkCache: [String: Bool] = [:]
+
     /// Le produit contient-il du porc, d'après son nom et ses catégories ?
     static func isPork(name: String, categories: [String]? = nil) -> Bool {
+        let key = name + "|" + (categories ?? []).joined(separator: ",")
+        if let cached = porkCache[key] { return cached }
+        let value = computeIsPork(name: name, categories: categories)
+        porkCache[key] = value
+        return value
+    }
+
+    private static func computeIsPork(name: String, categories: [String]?) -> Bool {
         let words = Set(SuggestionEngine.tokens(name))
         if !words.isDisjoint(with: porkWords) { return true }
         let tags = (categories ?? []).map { $0.lowercased() }

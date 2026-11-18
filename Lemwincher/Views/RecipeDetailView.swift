@@ -115,7 +115,7 @@ struct RecipeDetailView: View {
                 .font(.subheadline)
                 .opacity(0.92)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 14) {
+            FlowLayout(spacing: 14) {
                 Label(RecipeFormat.duration(recipe.minutes), systemImage: "clock")
                 Label("\(recipe.steps.count) étapes", systemImage: "list.number")
                 if recipe.isVegetarian {
@@ -182,12 +182,11 @@ struct RecipeDetailView: View {
                 .accessibilityIdentifier("addMissingIngredients")
             }
             if let addedMessage {
-                HStack {
+                VStack(alignment: .leading, spacing: 6) {
                     Label(addedMessage, systemImage: "checkmark.circle.fill")
                         .font(.subheadline)
                         .foregroundStyle(Color.brand)
-                    Spacer()
-                    Button("Voir ma liste") { model.selectedTab = .list }
+                    Button("Voir ma liste →") { model.selectedTab = .list }
                         .font(.subheadline.weight(.semibold))
                         .buttonStyle(.borderless)
                 }

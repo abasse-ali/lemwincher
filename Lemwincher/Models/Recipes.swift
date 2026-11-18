@@ -85,13 +85,25 @@ struct Recipe: Identifiable, Hashable {
     let summary: String
     let ingredients: [RecipeIngredient]
     let steps: [String]
+    /// Calculés une fois à la création (les listes de recettes sont filtrées à chaque affichage).
+    let isVegetarian: Bool
+    let containsPork: Bool
 
-    var isVegetarian: Bool {
-        !ingredients.contains { DietFilter.isMeatOrFish($0.name) || DietFilter.isMeatOrFish($0.shopping) }
-    }
-
-    var containsPork: Bool {
-        ingredients.contains { DietFilter.isPork(name: $0.name) || DietFilter.isPork(name: $0.shopping) }
+    init(id: String, name: String, emoji: String, course: RecipeCourse, minutes: Int, servings: Int,
+         tags: Set<RecipeTag>, protein: String?, summary: String, ingredients: [RecipeIngredient], steps: [String]) {
+        self.id = id
+        self.name = name
+        self.emoji = emoji
+        self.course = course
+        self.minutes = minutes
+        self.servings = servings
+        self.tags = tags
+        self.protein = protein
+        self.summary = summary
+        self.ingredients = ingredients
+        self.steps = steps
+        isVegetarian = !ingredients.contains { DietFilter.isMeatOrFish($0.name) || DietFilter.isMeatOrFish($0.shopping) }
+        containsPork = ingredients.contains { DietFilter.isPork(name: $0.name) || DietFilter.isPork(name: $0.shopping) }
     }
 
     var isQuick: Bool { minutes <= 20 }
@@ -201,10 +213,26 @@ enum RecipeEngine {
         }
     }
 
+    /// Mots des noms déjà analysés : les mêmes noms reviennent sans cesse (articles × ingrédients × recettes),
+    /// on ne les découpe qu'une fois.
+    private static var wordsCache: [String: (significant: [String], tokens: [String])] = [:]
+
+    static func words(_ text: String) -> (significant: [String], tokens: [String]) {
+        if let cached = wordsCache[text] { return cached }
+        let value = (significant: SuggestionEngine.significantWords(text), tokens: SuggestionEngine.tokens(text))
+        wordsCache[text] = value
+        return value
+    }
+
     /// Un article de la liste couvre-t-il cet ingrédient ? (« Poulet » couvre « Blancs de poulet »).
+    /// Même règle que `SuggestionEngine.relevance(...) > 0`, dans les deux sens.
     static func matches(listName: String, shopping: String) -> Bool {
-        SuggestionEngine.relevance(name: shopping, query: listName) > 0
-            || SuggestionEngine.relevance(name: listName, query: shopping) > 0
+        let list = words(listName)
+        let item = words(shopping)
+        func covers(_ query: [String], _ tokens: [String]) -> Bool {
+            !query.isEmpty && query.allSatisfy { word in tokens.contains { $0.hasPrefix(word) } }
+        }
+        return covers(list.significant, item.tokens) || covers(item.significant, list.tokens)
     }
 
     static func isInList(_ shopping: String, listNames: [String]) -> Bool {

@@ -563,52 +563,62 @@ struct ShoppingRow: View {
     /// Cocher / décocher (acheté : dépense ajoutée au budget).
     var onToggle: (() -> Void)? = nil
 
+    /// Retrait des lignes de détail : sous le nom (case 26 + 12 + vignette 36 + 12).
+    private let detailIndent: CGFloat = 86
+
     var body: some View {
-        HStack(spacing: 12) {
-            Button {
-                if let onToggle { onToggle() } else { item.checked.toggle() }
-            } label: {
-                Image(systemName: item.checked ? "checkmark.circle.fill" : "circle")
-                    .font(.title2)
-                    .foregroundStyle(item.checked ? Color.brand : Color.secondary)
-            }
-            // « borderless » : dans une ligne de liste dépliable, le bouton garde son propre toucher.
-            .buttonStyle(.borderless)
-            .accessibilityLabel(item.checked ? "Acheté (décocher)" : "Cocher : acheté")
-            .accessibilityIdentifier("checkItem")
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 12) {
+                Button {
+                    if let onToggle { onToggle() } else { item.checked.toggle() }
+                } label: {
+                    Image(systemName: item.checked ? "checkmark.circle.fill" : "circle")
+                        .font(.title2)
+                        .foregroundStyle(item.checked ? Color.brand : Color.secondary)
+                        .frame(width: 26)
+                }
+                // « borderless » : dans une ligne de liste dépliable, le bouton garde son propre toucher.
+                .buttonStyle(.borderless)
+                .accessibilityLabel(item.checked ? "Acheté (décocher)" : "Cocher : acheté")
+                .accessibilityIdentifier("checkItem")
 
-            ProductThumb(url: item.choice?.imageURL ?? item.product.imageURL, size: 36)
+                ProductThumb(url: item.choice?.imageURL ?? item.product.imageURL, size: 36)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.product.name)
-                    .strikethrough(item.checked)
-                    .foregroundStyle(item.checked ? Color.secondary : Color.primary)
-                    .lineLimit(2)
-                if let choice = item.choice {
-                    Label(Fmt.join(choice.name, choice.brand, choice.quantity), systemImage: "arrow.turn.down.right")
-                        .font(.caption)
-                        .foregroundStyle(Color.brand)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.product.name)
+                        .strikethrough(item.checked)
+                        .foregroundStyle(item.checked ? Color.secondary : Color.primary)
                         .lineLimit(2)
-                } else if let brand = item.product.brand {
-                    Text(brand).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    if item.choice == nil, let brand = item.product.brand {
+                        Text(brand).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
                 }
-                if item.checked, let expense = model.listExpense(for: item) {
-                    Label(Fmt.join(Fmt.price(expense.amount, model.settings.currency) + " dépensés", expense.storeName),
-                          systemImage: "eurosign.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .accessibilityIdentifier("itemExpense")
-                }
+                .layoutPriority(1)
+
+                Spacer(minLength: 4)
+
+                QuantityControl(quantity: $item.quantity)
+                    .onChange(of: item.quantity) { old, new in
+                        model.rescaleListExpense(itemID: item.id, from: old, to: new)
+                    }
             }
-            .layoutPriority(1)
-
-            Spacer(minLength: 4)
-
-            QuantityControl(quantity: $item.quantity)
-                .onChange(of: item.quantity) { old, new in
-                    model.rescaleListExpense(itemID: item.id, from: old, to: new)
-                }
+            // Détails sur toute la largeur, sous le nom : le produit choisi et la dépense.
+            if let choice = item.choice {
+                Label(Fmt.join(choice.name, choice.brand, choice.quantity), systemImage: "arrow.turn.down.right")
+                    .font(.caption)
+                    .foregroundStyle(Color.brand)
+                    .lineLimit(2)
+                    .padding(.leading, detailIndent)
+            }
+            if item.checked, let expense = model.listExpense(for: item) {
+                Label(Fmt.join(Fmt.price(expense.amount, model.settings.currency) + " dépensés", expense.storeName),
+                      systemImage: "eurosign.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .padding(.leading, detailIndent)
+                    .accessibilityIdentifier("itemExpense")
+            }
         }
     }
 }
