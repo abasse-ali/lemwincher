@@ -264,6 +264,8 @@ final class LemwincherUITests: XCTestCase {
                 first.tap()
                 sleep(2)
                 snapshot("13c-liste-oeufs-choisis")
+            } else {
+                dump(app, "13c-suggestion-introuvable")
             }
             eggs.tap()
             sleep(1)
@@ -333,11 +335,23 @@ final class LemwincherUITests: XCTestCase {
         sleep(1)
         let eggs = app.staticTexts["Œufs"].firstMatch
         guard eggs.waitForExistence(timeout: 5) else { return }
-        eggs.tap()
-        sleep(3)
         let open = element(app, "captureFromSite")
-        reveal(open, in: app, swipes: 12)
-        guard open.waitForExistence(timeout: 10), open.isHittable else {
+        if !element(app, "suggestion").exists {
+            eggs.tap()   // replié : on le déplie
+            sleep(3)
+        }
+        snapshot("19a-liste-oeufs-redeplies")
+        // Petits défilements jusqu'au bouton, sans le dépasser.
+        var swipes = 0
+        while !open.exists && swipes < 15 {
+            app.collectionViews.firstMatch.swipeUp(velocity: .slow)
+            swipes += 1
+        }
+        if open.exists && !open.isHittable {
+            app.collectionViews.firstMatch.swipeUp(velocity: .slow)
+        }
+        guard open.waitForExistence(timeout: 5), open.isHittable else {
+            snapshot("19-bouton-site-introuvable")
             dump(app, "19-bouton-site-introuvable")
             return
         }
