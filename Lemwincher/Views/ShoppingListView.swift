@@ -163,7 +163,7 @@ struct ShoppingListView: View {
                             } label: {
                                 ShoppingRow(item: $item, onToggle: { toggle(item) })
                             }
-                            .accessibilityIdentifier("shoppingItem")
+                            // Pas d'identifiant ici : il écraserait ceux des boutons à l'intérieur (cases, produits, site).
                         }
                         .onDelete { offsets in
                             bindable.state.shoppingList.remove(atOffsets: offsets)
