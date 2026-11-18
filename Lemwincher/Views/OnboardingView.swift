@@ -21,7 +21,7 @@ struct OnboardingView: View {
              text: "Fixez votre budget courses du mois (100 € par exemple). Lemwincher vous dit ce qu'il reste, combien vous pouvez dépenser par jour, et vous prévient avant de dépasser."),
         Page(icon: "chart.bar.fill", color: Color.blue,
              title: "Des prix réels, partout en France",
-             text: "Les prix viennent d'Open Prices, relevés par des milliers de consommateurs. Quand personne n'a relevé un produit près de chez vous, l'app l'estime à partir des prix de chaque enseigne en France."),
+             text: "Uniquement de vrais prix, relevés en magasin par des milliers de consommateurs (Open Prices), avec le magasin et la date. Quand personne n'a relevé un produit près de chez vous, l'app montre le prix relevé dans le magasin de la même enseigne le plus proche."),
         Page(icon: "fuelpump.fill", color: Color.orange,
              title: "Carburant, rappels et alertes",
              text: "Trouvez la station la moins chère (prix officiels), soyez prévenu si un produit de votre liste est rappelé, et suivez les produits dont vous attendez une baisse de prix."),

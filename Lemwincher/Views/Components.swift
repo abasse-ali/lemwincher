@@ -430,7 +430,7 @@ struct CompareRow: View {
     }
 }
 
-/// Prix estimé d'un produit dans une enseigne, avec son magasin le plus proche.
+/// Vrai prix d'un produit dans une enseigne : où et quand il a été relevé, et le magasin de l'enseigne le plus proche.
 struct ChainEstimateRow: View {
     let estimate: ChainEstimate
     let nearestStore: Store?
@@ -438,11 +438,15 @@ struct ChainEstimateRow: View {
     let cheapest: Bool
 
     private var subtitle: String {
-        let plural = estimate.storeCount > 1 ? "s" : ""
-        let countText = "\(estimate.storeCount) magasin\(plural) relevé\(plural)"
-        guard let store = nearestStore else { return countText }
-        let distanceText: String? = distance.map { Fmt.distance($0) }
-        return Fmt.join("le plus proche : " + Fmt.join(store.name, distanceText), countText)
+        var parts: [String] = []
+        if let reference = estimate.reference {
+            parts.append("relevé chez \(reference.storeName) · \(Fmt.day(reference.date))")
+        }
+        if let store = nearestStore, store.id != estimate.reference?.storeKey {
+            let distanceText: String? = distance.map { Fmt.distance($0) }
+            parts.append("près de chez vous : " + Fmt.join(store.name, distanceText))
+        }
+        return parts.joined(separator: "\n")
     }
 
     var body: some View {
@@ -453,15 +457,16 @@ struct ChainEstimateRow: View {
                 Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(4)
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
-                Text("≈ " + Fmt.price(estimate.median, estimate.currency))
+                Text(Fmt.price(estimate.displayPrice, estimate.currency))
+                    .fixedSize()
                     .font(.headline.monospacedDigit())
                     .foregroundStyle(cheapest ? Color.brand : Color.primary)
                 if cheapest {
-                    Text("Enseigne la moins chère").font(.caption2.bold()).foregroundStyle(Color.brand)
+                    Text("La moins chère").font(.caption2.bold()).foregroundStyle(Color.brand)
                 }
             }
         }

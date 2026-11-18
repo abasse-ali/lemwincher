@@ -278,7 +278,7 @@ struct SearchView: View {
         } header: {
             Text(catalogTotal > 0 ? "Tous les produits (\(catalogTotal.formatted()))" : "Tous les produits")
         } footer: {
-            Text("Catalogue Open Food Facts. Touchez un produit pour voir son prix dans les magasins autour de vous ou l'estimation par enseigne.")
+            Text("Catalogue Open Food Facts. Touchez un produit pour voir les prix relevés dans les magasins autour de vous et dans chaque enseigne.")
         }
     }
 

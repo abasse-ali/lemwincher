@@ -1,15 +1,30 @@
 import Foundation
 import CoreLocation
 
-/// Meilleur prix connu d'un produit pour l'utilisateur.
+/// Un vrai prix relevé pour un produit : magasin, distance et date du relevé.
 struct PriceOffer: Hashable {
     let price: Double
     let currency: String
-    /// Magasin ("Lidl Minimes") ou enseigne ("Lidl").
-    let place: String
+    /// Magasin où le prix a été relevé ("Lidl Minimes").
+    let storeName: String
     let distance: Double?
-    /// Prix médian de l'enseigne (pas un prix relevé dans le magasin).
-    let isEstimate: Bool
+    let date: Date
+    /// Relevé dans un magasin du rayon de recherche (sinon : dans un autre magasin de l'enseigne).
+    let isLocal: Bool
+
+    init(price: Double, currency: String, storeName: String, distance: Double?, date: Date, isLocal: Bool) {
+        self.price = price
+        self.currency = currency
+        self.storeName = storeName
+        self.distance = distance
+        self.date = date
+        self.isLocal = isLocal
+    }
+
+    init(_ obs: PriceObservation, reference: CLLocation?, isLocal: Bool) {
+        self.init(price: obs.price, currency: obs.currency, storeName: obs.storeName,
+                  distance: obs.distance(from: reference), date: obs.date, isLocal: isLocal)
+    }
 }
 
 /// Un produit précis proposé sous un article de la liste ("Œufs" -> "6 œufs plein air Loué").
@@ -110,8 +125,10 @@ enum SuggestionEngine {
         return 2
     }
 
-    /// Meilleure offre : le prix réellement relevé le plus bas autour de soi,
-    /// sinon le prix médian de l'enseigne la moins chère du quartier, sinon de France.
+    /// Meilleure offre, toujours un vrai prix relevé :
+    /// 1. le prix le plus bas relevé dans un magasin autour de soi ;
+    /// 2. sinon le prix le plus bas relevé dans un magasin d'une enseigne présente dans le quartier ;
+    /// 3. sinon le relevé le plus proche / le plus récent en France (hors promotions).
     static func bestOffer(observations: [PriceObservation],
                           reference: CLLocation?,
                           radiusMeters: Double,
@@ -124,17 +141,16 @@ enum SuggestionEngine {
             return distance <= radiusMeters
         })
         if let best = local.min(by: { $0.price < $1.price }) {
-            return PriceOffer(price: best.price, currency: best.currency, place: best.storeName,
-                              distance: best.distance(from: reference), isEstimate: false)
+            return PriceOffer(best, reference: reference, isLocal: true)
         }
-        let estimates = ChainStats.estimates(from: usable)
-        if let near = estimates.first(where: { nearbyChains[$0.key] != nil }) {
-            return PriceOffer(price: near.median, currency: near.currency, place: near.name,
-                              distance: nearbyChains[near.key]?.distance(from: reference), isEstimate: true)
+        let estimates = ChainStats.estimates(from: usable, near: reference)
+        let nearbyReferences = estimates.filter { nearbyChains[$0.key] != nil }.compactMap(\.reference)
+        if let cheapest = nearbyReferences.min(by: { $0.price < $1.price }) {
+            return PriceOffer(cheapest, reference: reference, isLocal: false)
         }
-        if let any = estimates.first {
-            return PriceOffer(price: any.median, currency: any.currency, place: any.name + ", France",
-                              distance: nil, isEstimate: true)
+        let regular = PriceEngine.latestPerStore(usable.filter { !$0.isDiscounted })
+        if let any = ChainStats.representative(regular, near: reference) {
+            return PriceOffer(any, reference: reference, isLocal: false)
         }
         return nil
     }

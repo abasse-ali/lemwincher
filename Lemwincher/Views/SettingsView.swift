@@ -62,7 +62,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Préférences")
                 } footer: {
-                    Text("La devise sert à vos relevés, aux estimations et au total du panier. Le carburant est celui affiché dans « Autour de moi ».")
+                    Text("La devise sert à vos relevés, aux prix affichés et au total du panier. Le carburant est celui affiché dans « Autour de moi ».")
                 }
 
                 backupSection

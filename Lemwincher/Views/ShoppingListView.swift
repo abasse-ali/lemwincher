@@ -57,7 +57,8 @@ struct ShoppingListView: View {
 
         var estimatesByCode: [String: [ChainEstimate]] = [:]
         for (code, list) in national {
-            estimatesByCode[code] = ChainStats.estimates(from: PriceEngine.filter(list, country: country, currency: currency))
+            estimatesByCode[code] = ChainStats.estimates(from: PriceEngine.filter(list, country: country, currency: currency),
+                                                         near: reference)
         }
 
         return PriceEngine.basket(items: items,
@@ -239,7 +240,7 @@ struct ShoppingListView: View {
     }
 
     private func basketBudgetText(best: StoreBasket, remaining: Double, currency: String) -> String {
-        let total = (best.estimateCount > 0 ? "≈ " : "") + Fmt.price(best.total, currency)
+        let total = Fmt.price(best.total, currency)
         if best.total <= remaining {
             return "Ce panier (\(total) chez \(best.storeName)) rentre dans votre budget."
         }
@@ -387,7 +388,7 @@ struct ShoppingListView: View {
             } header: {
                 Text("Où faire mes courses ?")
             } footer: {
-                Text("Pour chaque magasin : le prix réellement relevé quand il existe, sinon le prix médian de son enseigne en France (« estimé »). Classement : d'abord le nombre de produits trouvés, puis le total.")
+                Text("Uniquement des prix réellement relevés : dans le magasin lui-même quand il existe, sinon dans le magasin de la même enseigne le plus proche (indiqué « autre magasin »). Classement : d'abord le nombre de produits trouvés, puis le total.")
             }
         }
 
@@ -602,13 +603,12 @@ struct SuggestionRow: View {
     let onChoose: () -> Void
     let onOpen: () -> Void
 
+    /// Où et quand ce prix a été relevé : "Lidl Minimes · 1,2 km · 12 nov." / "relevé chez E.Leclerc Rouen · hier".
     private var placeText: String? {
         guard let offer = suggestion.offer else { return nil }
-        let distance: String? = offer.distance.map { Fmt.distance($0) }
-        if offer.isEstimate {
-            return Fmt.join("prix habituel chez \(offer.place)", distance)
-        }
-        return Fmt.join(offer.place, distance)
+        let distance: String? = offer.distance.flatMap { $0 < 100_000 ? Fmt.distance($0) : nil }
+        let place = offer.isLocal ? offer.storeName : "relevé chez \(offer.storeName)"
+        return Fmt.join(place, distance, Fmt.day(offer.date))
     }
 
     var body: some View {
@@ -659,9 +659,9 @@ struct SuggestionRow: View {
     private var priceView: some View {
         if let offer = suggestion.offer {
             VStack(alignment: .trailing, spacing: 1) {
-                Text((offer.isEstimate ? "≈ " : "") + Fmt.price(offer.price, offer.currency))
+                Text(Fmt.price(offer.price, offer.currency))
                     .font(.subheadline.bold().monospacedDigit())
-                    .foregroundStyle(offer.isEstimate ? Color.primary : Color.brand)
+                    .foregroundStyle(offer.isLocal ? Color.brand : Color.primary)
                 if let unit = suggestion.product.normalizedAmount {
                     Text(unit.unitPriceText(offer.price, currency: offer.currency))
                         .font(.caption2)
@@ -719,13 +719,14 @@ struct StoreBasketRow: View {
 
     private var summary: String {
         let estimates = basket.estimateCount
-        let estimateText: String? = estimates > 0 ? "dont \(estimates) estimé" + (estimates > 1 ? "s" : "") : nil
+        let estimateText: String? = estimates > 0
+            ? "\(estimates) prix d'un autre magasin \(basket.store?.chainName ?? "de l'enseigne")"
+            : nil
         let distanceText: String? = distance.map { Fmt.distance($0) }
         return Fmt.join("\(basket.lines.count)/\(itemCount) produits", estimateText, distanceText)
     }
 
     var body: some View {
-        let estimates = basket.estimateCount
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -748,7 +749,7 @@ struct StoreBasketRow: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
-                Text((estimates > 0 ? "≈ " : "") + Fmt.price(basket.total, currency))
+                Text(Fmt.price(basket.total, currency))
                     .font(.title3.bold().monospacedDigit())
                     .foregroundStyle(best ? Color.brand : Color.primary)
             }

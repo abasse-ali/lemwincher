@@ -59,7 +59,7 @@ struct ProductCompareView: View {
 
     var body: some View {
         let rows = self.rows
-        let estimates = ChainStats.estimates(from: nationalUsable)
+        let estimates = ChainStats.estimates(from: nationalUsable, near: model.referenceLocation)
         let nearby = model.nearestStoreByChain
         let nearbyEstimates = estimates.filter { nearby[$0.key] != nil }
         let otherEstimates = estimates.filter { nearby[$0.key] == nil }
@@ -180,7 +180,9 @@ struct ProductCompareView: View {
         }
         if rows.isEmpty {
             for estimate in estimates.prefix(5) {
-                lines.append("• ≈ \(Fmt.price(estimate.median, estimate.currency)) chez \(estimate.name) (prix médian en France)")
+                if let reference = estimate.reference {
+                    lines.append("• \(Fmt.price(reference.price, reference.currency)) chez \(reference.storeName) (\(Fmt.day(reference.date)))")
+                }
             }
         }
         lines.append("Comparé avec Lemwincher")
@@ -308,15 +310,15 @@ struct ProductCompareView: View {
                     }
                 }
             } header: {
-                Text("Estimation par enseigne")
+                Text("Prix par enseigne")
             } footer: {
-                Text("Prix médian relevé dans les magasins de chaque enseigne en France sur 12 mois (hors promotions). Utile quand personne n'a encore relevé le produit près de chez vous.")
+                Text("Pour chaque enseigne : un vrai prix relevé (hors promotions) dans l'un de ses magasins, le plus proche de chez vous possible et le plus récent. Le prix peut varier d'un magasin à l'autre de la même enseigne.")
             }
         } else if loading {
-            Section("Estimation par enseigne") {
+            Section("Prix par enseigne") {
                 HStack(spacing: 10) {
                     ProgressView()
-                    Text("Calcul des estimations…").foregroundStyle(.secondary)
+                    Text("Recherche des prix relevés…").foregroundStyle(.secondary)
                 }
             }
         }

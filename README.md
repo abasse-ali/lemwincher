@@ -20,7 +20,7 @@ Et aussi : **Siri** (« Ajoute à ma liste Lemwincher », « Combien il me reste
 
 - **Prix** : [Open Prices](https://prices.openfoodfacts.org) (Open Food Facts), base collaborative de prix relevés sur étiquettes et tickets.
   - Près de chez vous : les derniers prix relevés dans chaque magasin.
-  - **Estimations par enseigne** : prix médian dans les magasins de l'enseigne en France sur 12 mois (hors promos).
+  - **Uniquement de vrais prix relevés**, toujours avec le magasin et la date. Quand personne n'a relevé un produit près de chez vous : le dernier prix relevé (hors promo) dans le magasin de la même enseigne le plus proche, indiqué « relevé chez … ». Les médianes ne servent qu'au classement des enseignes.
   - **Classement des enseignes** : indice calculé sur ~40 produits de grandes marques vendus partout (Nutella, Barilla, St Michel…). Recalculé tous les 3 jours.
 - **Magasins et horaires** : OpenStreetMap (Overpass), dernière liste gardée en cache, Plans d'Apple en secours.
 - **Fiches produits** (nom, photo, contenance, catégories, Nutri-Score…) : Open Food Facts.
@@ -28,7 +28,7 @@ Et aussi : **Siri** (« Ajoute à ma liste Lemwincher », « Combien il me reste
 - **Rappels de produits** : RappelConso (data.economie.gouv.fr), recherche par code-barres et par département.
 - **Lecture des étiquettes et tickets** : Vision, sur l'iPhone (aucune photo envoyée, sauf partage volontaire sur Open Prices).
 
-> **Toulouse** : Open Prices y compte encore peu de relevés (≈ 370 prix et 38 magasins dans un rayon de 15 km, novembre 2026). C'est pourquoi l'app s'appuie sur les estimations par enseigne et sur vos propres relevés, et vous permet de partager les vôtres pour enrichir la base.
+> **Toulouse** : Open Prices y compte encore peu de relevés (≈ 370 prix et 38 magasins dans un rayon de 15 km, novembre 2026). C'est pourquoi l'app montre aussi les prix relevés dans les autres magasins de chaque enseigne, ainsi que vos propres relevés, et vous permet de partager les vôtres pour enrichir la base.
 
 ---
 

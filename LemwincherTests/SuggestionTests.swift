@@ -42,12 +42,12 @@ final class SuggestionTests: XCTestCase {
                                                              radiusMeters: 8000, country: "FR", currency: "EUR",
                                                              nearbyChains: [:]))
         XCTAssertEqual(offer.price, 2.19, accuracy: 1e-9)
-        XCTAssertFalse(offer.isEstimate)
-        XCTAssertEqual(offer.place, "Magasin NODE:2")
+        XCTAssertTrue(offer.isLocal)
+        XCTAssertEqual(offer.storeName, "Magasin NODE:2")
         XCTAssertNotNil(offer.distance)
     }
 
-    func testBestOfferFallsBackToNearbyChainEstimate() throws {
+    func testBestOfferFallsBackToARealPriceFromTheSameChain() throws {
         let home = CLLocation(latitude: 43.6045, longitude: 1.4433)
         let far = [
             Fixtures.obs(1.80, store: "NODE:10", chain: "e leclerc", lat: 48.85, lon: 2.35),
@@ -59,13 +59,15 @@ final class SuggestionTests: XCTestCase {
         let nearbyOffer = try XCTUnwrap(SuggestionEngine.bestOffer(observations: far, reference: home, radiusMeters: 8000,
                                                                    country: "FR", currency: "EUR",
                                                                    nearbyChains: monoprixNearby))
-        XCTAssertTrue(nearbyOffer.isEstimate)
-        XCTAssertEqual(nearbyOffer.place, "Monoprix")
-        XCTAssertEqual(nearbyOffer.price, 2.65, accuracy: 1e-9)
+        // Vrai prix relevé dans le magasin Monoprix le plus proche (pas une moyenne).
+        XCTAssertFalse(nearbyOffer.isLocal)
+        XCTAssertEqual(nearbyOffer.storeName, "Magasin NODE:11")
+        XCTAssertEqual(nearbyOffer.price, 2.60, accuracy: 1e-9)
+        XCTAssertEqual(nearbyOffer.date, Fixtures.day(0))
 
         let anywhere = try XCTUnwrap(SuggestionEngine.bestOffer(observations: far, reference: home, radiusMeters: 8000,
                                                                 country: "FR", currency: "EUR", nearbyChains: [:]))
-        XCTAssertEqual(anywhere.place, "E.Leclerc, France")
+        XCTAssertEqual(anywhere.storeName, "Magasin NODE:10", "le relevé du magasin le plus proche")
         XCTAssertEqual(anywhere.price, 1.80, accuracy: 1e-9)
 
         XCTAssertNil(SuggestionEngine.bestOffer(observations: [], reference: home, radiusMeters: 8000,
@@ -75,11 +77,28 @@ final class SuggestionTests: XCTestCase {
     func testSortedPutsPricedFirst() {
         func suggestion(_ code: String, _ price: Double?) -> ProductSuggestion {
             ProductSuggestion(product: Product(code: code, name: code),
-                              offer: price.map { PriceOffer(price: $0, currency: "EUR", place: "X", distance: nil, isEstimate: false) },
+                              offer: price.map { PriceOffer(price: $0, currency: "EUR", storeName: "X", distance: nil,
+                                                            date: Fixtures.day(0), isLocal: true) },
                               nutriScore: nil)
         }
         let sorted = SuggestionEngine.sorted([suggestion("A", nil), suggestion("B", 3.0), suggestion("C", 1.5)])
         XCTAssertEqual(sorted.map(\.id), ["C", "B", "A"])
+    }
+
+    func testChainReferenceIsARealNearbyRecentPrice() throws {
+        let home = CLLocation(latitude: 43.6045, longitude: 1.4433)
+        let list = [
+            Fixtures.obs(3.10, store: "NODE:1", chain: "lidl", date: Fixtures.day(1), lat: 43.61, lon: 1.45),     // Toulouse, ancien
+            Fixtures.obs(3.30, store: "NODE:2", chain: "lidl", date: Fixtures.day(9), lat: 43.62, lon: 1.40),     // Toulouse, récent
+            Fixtures.obs(2.50, store: "NODE:3", chain: "lidl", date: Fixtures.day(10), lat: 48.85, lon: 2.35),    // Paris, très récent
+        ]
+        let estimate = try XCTUnwrap(ChainStats.estimates(from: list, near: home).first)
+        XCTAssertEqual(estimate.reference?.storeKey, "NODE:2", "le plus récent à moins de 30 km")
+        XCTAssertEqual(estimate.displayPrice, 3.30, accuracy: 1e-9)
+        XCTAssertEqual(estimate.median, 3.10, accuracy: 1e-9, "la médiane reste disponible pour les statistiques")
+
+        let noLocation = try XCTUnwrap(ChainStats.estimates(from: list).first)
+        XCTAssertEqual(noLocation.reference?.storeKey, "NODE:3", "sans position : le plus récent")
     }
 
     func testBasketUsesChosenProduct() {

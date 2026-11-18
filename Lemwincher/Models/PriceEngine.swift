@@ -54,7 +54,8 @@ struct PriceObservation: Identifiable, Hashable {
 
 // MARK: - Estimation par enseigne
 
-/// Prix médian d'un produit dans une enseigne (sur les relevés de tout le pays).
+/// Prix d'un produit dans une enseigne : un vrai prix relevé dans un de ses magasins (`reference`),
+/// et la médiane entre magasins (utilisée seulement pour les statistiques, comme le classement).
 struct ChainEstimate: Identifiable, Hashable {
     let key: String
     let name: String
@@ -62,8 +63,12 @@ struct ChainEstimate: Identifiable, Hashable {
     let storeCount: Int
     let currency: String
     let latest: Date
+    /// Vrai prix relevé (hors promo) dans le magasin de l'enseigne le plus pertinent pour l'utilisateur.
+    var reference: PriceObservation? = nil
 
     var id: String { key }
+    /// Prix affiché : le vrai prix relevé.
+    var displayPrice: Double { reference?.price ?? median }
 }
 
 enum ChainStats {
@@ -77,8 +82,9 @@ enum ChainStats {
         return sorted[middle]
     }
 
-    /// Médiane par enseigne : un seul prix (le plus récent, hors promo) par magasin, puis médiane entre magasins.
-    static func estimates(from observations: [PriceObservation]) -> [ChainEstimate] {
+    /// Par enseigne : un seul prix (le plus récent, hors promo) par magasin, la médiane entre magasins,
+    /// et un vrai prix de référence (voir `representative`). Triées du prix affiché le plus bas au plus haut.
+    static func estimates(from observations: [PriceObservation], near reference: CLLocation? = nil) -> [ChainEstimate] {
         let regular = observations.filter { !$0.isDiscounted && $0.chainKey != nil }
         let perStore = PriceEngine.latestPerStore(regular)
         var groups: [String: [PriceObservation]] = [:]
@@ -91,9 +97,26 @@ enum ChainStats {
             let name = Chain.displayName(for: key) ?? first.chainName ?? key
             let latest = list.map(\.date).max() ?? first.date
             return ChainEstimate(key: key, name: name, median: median(list.map(\.price)),
-                                 storeCount: list.count, currency: first.currency, latest: latest)
+                                 storeCount: list.count, currency: first.currency, latest: latest,
+                                 reference: representative(list, near: reference))
         }
-        return estimates.sorted { $0.median < $1.median }
+        return estimates.sorted { $0.displayPrice < $1.displayPrice }
+    }
+
+    /// Le relevé le plus utile parmi les derniers prix de chaque magasin :
+    /// le plus récent à moins de 30 km, sinon celui du magasin le plus proche, sinon le plus récent.
+    static func representative(_ list: [PriceObservation], near reference: CLLocation?) -> PriceObservation? {
+        guard !list.isEmpty else { return nil }
+        if let reference {
+            var withDistance: [(obs: PriceObservation, distance: Double)] = []
+            for obs in list {
+                if let distance = obs.distance(from: reference) { withDistance.append((obs, distance)) }
+            }
+            let near = withDistance.filter { $0.distance <= 30_000 }
+            if let recent = near.max(by: { $0.obs.date < $1.obs.date }) { return recent.obs }
+            if let nearest = withDistance.min(by: { $0.distance < $1.distance }) { return nearest.obs }
+        }
+        return list.max { $0.date < $1.date }
     }
 }
 
@@ -319,7 +342,8 @@ enum PriceEngine {
                     basket.lines.append(BasketLine(item: item, price: obs.price, currency: obs.currency,
                                                    isEstimate: false, storeKey: store.id, storeName: store.name))
                 } else if let chain, let estimate = estimatesByCode[code]?.first(where: { $0.key == chain }) {
-                    basket.lines.append(BasketLine(item: item, price: estimate.median, currency: estimate.currency,
+                    // Vrai prix relevé dans un autre magasin de la même enseigne.
+                    basket.lines.append(BasketLine(item: item, price: estimate.displayPrice, currency: estimate.currency,
                                                    isEstimate: true, storeKey: store.id, storeName: store.name))
                 } else {
                     basket.missing.append(item)
