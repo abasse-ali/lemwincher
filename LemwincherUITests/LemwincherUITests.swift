@@ -271,19 +271,13 @@ final class LemwincherUITests: XCTestCase {
             sleep(1)
         }
 
-        // Cocher un article = acheté = dépense du mois (prix inconnu ici : l'app demande le montant).
-        let check = element(app, "checkItem")
-        if check.waitForExistence(timeout: 5) && check.isHittable {
-            check.tap()
-            let amountField = app.alerts.firstMatch.textFields.firstMatch
-            if amountField.waitForExistence(timeout: 5) {
-                amountField.typeText("3,39")
-                snapshot("13d-prix-paye")
-                app.alerts.firstMatch.buttons["Ajouter au budget"].tap()
-            }
-            sleep(2)
-            snapshot("13e-article-coche-depense")
-        }
+        // Acheté = dépense du mois : glisser l'article vers la droite.
+        // « Œufs » (produit choisi, prix connu) : dépense directe.
+        markBought(app, "Œufs", amount: nil)
+        // « Pommes Gala » (aucun prix connu) : l'app demande le montant payé.
+        markBought(app, "Pommes Gala", amount: "2,40")
+        sleep(1)
+        snapshot("13e-articles-coches-depenses")
 
         app.swipeUp()
         sleep(1)
@@ -340,6 +334,27 @@ final class LemwincherUITests: XCTestCase {
         captureFromAldi(app)
     }
 
+    /// Glisse l'article vers la droite et touche « Acheté » ; répond à la question du montant si elle vient.
+    private func markBought(_ app: XCUIApplication, _ name: String, amount: String?) {
+        let label = app.staticTexts[name].firstMatch
+        guard label.waitForExistence(timeout: 5) else { return }
+        if !label.isHittable { reveal(label, in: app) }
+        label.swipeRight()
+        let bought = app.buttons["Acheté"].firstMatch
+        guard bought.waitForExistence(timeout: 3) else {
+            dump(app, "13d-achete-introuvable-\(name)")
+            return
+        }
+        bought.tap()
+        let field = app.alerts.firstMatch.textFields.firstMatch
+        if field.waitForExistence(timeout: 3) {
+            field.typeText(amount ?? "1")
+            snapshot("13d-prix-paye")
+            app.alerts.firstMatch.buttons["Ajouter au budget"].tap()
+        }
+        sleep(1)
+    }
+
     private func captureFromAldi(_ app: XCUIApplication) {
         tab(app, "Ma liste")
         sleep(2)
@@ -372,7 +387,12 @@ final class LemwincherUITests: XCTestCase {
         open.tap()
         let aldi = element(app, "site-aldi")
         guard aldi.waitForExistence(timeout: 10) else { return }
-        if !aldi.isHittable { element(app, "siteBar").swipeLeft() }
+        // Aldi est en bout de barre : on la fait défiler (sans demander si le bouton est visible,
+        // ce qui échoue pour un bouton hors écran).
+        let bar = element(app, "siteBar")
+        bar.swipeLeft()
+        bar.swipeLeft()
+        sleep(1)
         aldi.tap()
         // Pas de requête pendant le chargement de la page (arbre d'accessibilité du site très lourd).
         sleep(25)

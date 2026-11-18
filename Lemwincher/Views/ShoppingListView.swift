@@ -162,6 +162,19 @@ struct ShoppingListView: View {
                                                    onCapture: { query in captureRequest = CaptureRequest(query: query) })
                             } label: {
                                 ShoppingRow(item: $item, onToggle: { toggle(item) })
+                                    // Glisser vers la droite : acheté (dépense) / pas acheté.
+                                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                        Button {
+                                            toggle(item)
+                                        } label: {
+                                            if item.checked {
+                                                Label("Pas acheté", systemImage: "arrow.uturn.backward")
+                                            } else {
+                                                Label("Acheté", systemImage: "checkmark")
+                                            }
+                                        }
+                                        .tint(item.checked ? Color.gray : Color.brand)
+                                    }
                             }
                             // Pas d'identifiant ici : il écraserait ceux des boutons à l'intérieur (cases, produits, site).
                         }
@@ -171,7 +184,7 @@ struct ShoppingListView: View {
                     } header: {
                         Text("Produits (\(model.state.shoppingList.count))")
                     } footer: {
-                        Text("Touchez un article pour voir les produits correspondants et leur prix, puis choisissez celui que vous achetez. Cochez-le une fois acheté : son prix s'ajoute à vos dépenses du mois.")
+                        Text("Touchez un article pour voir les produits correspondants et leur prix, puis choisissez celui que vous achetez. Une fois acheté, cochez-le (ou glissez-le vers la droite) : son prix s'ajoute à vos dépenses du mois.")
                     }
                     if !model.state.settings.favoriteStores.isEmpty {
                         Section {
@@ -559,7 +572,8 @@ struct ShoppingRow: View {
                     .font(.title2)
                     .foregroundStyle(item.checked ? Color.brand : Color.secondary)
             }
-            .buttonStyle(.plain)
+            // « borderless » : dans une ligne de liste dépliable, le bouton garde son propre toucher.
+            .buttonStyle(.borderless)
             .accessibilityLabel(item.checked ? "Acheté (décocher)" : "Cocher : acheté")
             .accessibilityIdentifier("checkItem")
 
