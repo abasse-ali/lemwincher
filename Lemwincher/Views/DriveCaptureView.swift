@@ -10,9 +10,16 @@ struct DriveCaptureView: View {
     let query: String
     @State private var site: DriveSite
     @State private var webView = DriveCaptureView.makeWebView()
-    @State private var captured: [CapturedPrice] = []
-    @State private var showReview = false
+    /// Prix lus sur la page, transmis tels quels à la feuille de vérification
+    /// (avec `sheet(isPresented:)`, la feuille pouvait s'ouvrir avec une liste encore vide).
+    @State private var review: CaptureBatch?
     @State private var message: String? = nil
+
+    struct CaptureBatch: Identifiable {
+        let id = UUID()
+        let items: [CapturedPrice]
+        let site: DriveSite
+    }
 
     init(query: String, preferredChain: String? = nil) {
         self.query = query
@@ -114,8 +121,8 @@ struct DriveCaptureView: View {
                     .buttonStyle(.borderedProminent)
                 }
             }
-            .sheet(isPresented: $showReview) {
-                CaptureReviewView(items: captured, site: site) {
+            .sheet(item: $review) { batch in
+                CaptureReviewView(items: batch.items, site: batch.site) {
                     dismiss()
                 }
             }
@@ -170,8 +177,7 @@ struct DriveCaptureView: View {
             if found.isEmpty {
                 message = "Aucun prix lisible sur cette page. Ouvrez une page de résultats ou de produit (choisissez votre magasin si le site le demande), puis réessayez."
             } else {
-                captured = found
-                showReview = true
+                review = CaptureBatch(items: found, site: site)
             }
         }
     }

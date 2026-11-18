@@ -615,7 +615,7 @@ struct ShoppingRow: View {
                       systemImage: "eurosign.circle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .padding(.leading, detailIndent)
                     .accessibilityIdentifier("itemExpense")
             }
