@@ -11,6 +11,22 @@ struct DriveSite: Identifiable, Hashable {
     let searchTemplate: String
     /// Le site affiche les prix d'un magasin choisi (drive) ; sinon les mêmes prix pour toute l'enseigne.
     var choosesStore: Bool = true
+    /// Page des rayons, quand le site en a une (sinon l'accueil, d'où l'on navigue dans les rayons).
+    var aislesURL: String? = nil
+
+    /// Où ouvrir le site depuis un magasin de la carte : ses rayons, sinon son accueil.
+    var startURL: URL? { URL(string: aislesURL ?? home) }
+
+    /// Site propre d'un magasin (adresse du site dans OpenStreetMap), lu comme les autres.
+    static func custom(for store: Store, url: URL) -> DriveSite {
+        DriveSite(id: "magasin-" + store.id, name: store.name, chainPrefix: store.chainKey ?? "-",
+                  home: url.absoluteString, searchTemplate: url.absoluteString, choosesStore: false)
+    }
+
+    /// Le site de l'enseigne d'un magasin, s'il fait partie des sites connus.
+    static func forStore(_ store: Store) -> DriveSite? {
+        all.first { $0.matches(store) }
+    }
 
     func url(for query: String) -> URL? {
         let text = query.trimmed
@@ -43,7 +59,7 @@ struct DriveSite: Identifiable, Hashable {
                   choosesStore: false),
         DriveSite(id: "aldi", name: "Aldi", chainPrefix: "aldi",
                   home: "https://www.aldi.fr", searchTemplate: "https://www.aldi.fr/recherche.html?query={q}",
-                  choosesStore: false),
+                  choosesStore: false, aislesURL: "https://www.aldi.fr/produits.html"),
         DriveSite(id: "monoprix", name: "Monoprix", chainPrefix: "monop",
                   home: "https://courses.monoprix.fr", searchTemplate: "https://courses.monoprix.fr/search?q={q}",
                   choosesStore: false),
@@ -159,125 +175,135 @@ enum DriveCaptureParser {
         return lower.prefix(1).uppercased() + lower.dropFirst()
     }
 
-    /// Script exécuté dans la page affichée : lit les produits décrits pour les moteurs de recherche
-    /// (JSON-LD et microdonnées schema.org), sinon les fiches produit affichées (nom, marque, prix, contenance),
-    /// sinon les « cartes produit » visibles (nom + prix, hors prix au kilo).
-    static let script = #"""
-    (function () {
-      var out = [];
-      var seen = {};
-      function clean(text) { return text ? String(text).replace(/\s+/g, ' ').trim() : ''; }
-      function add(name, price, gtin, image, brand, quantity, promo) {
-        if (!name || price === undefined || price === null) return;
-        name = clean(name);
-        var p = typeof price === 'number' ? price : parseFloat(String(price).replace(/[^0-9,.]/g, '').replace(',', '.'));
-        if (!(p > 0 && p < 1000) || name.length < 3) return;
-        brand = clean(brand);
-        // "AUCHAN Oeufs de poules…" (marque AUCHAN) -> "Oeufs de poules…".
-        if (brand && name.toLowerCase().indexOf(brand.toLowerCase() + ' ') === 0 && name.length > brand.length + 3) {
-          name = name.slice(brand.length + 1).trim();
-        }
-        var key = [brand, name, quantity || '', p.toFixed(2)].join('|').toLowerCase();
-        if (seen[key]) return;
-        seen[key] = true;
-        out.push({ name: name.slice(0, 160), price: Math.round(p * 100) / 100,
-                   gtin: gtin ? String(gtin) : null, image: image ? String(image) : null,
-                   brand: brand && brand.length <= 40 && brand.toLowerCase() !== name.toLowerCase() ? brand : null,
-                   quantity: quantity || null,
-                   promo: promo ? true : false,
-                   oldPrice: promo && promo.old > p ? Math.round(promo.old * 100) / 100 : null });
+    /// Fonctions de lecture, exécutées dans la page affichée (corps d'une fonction asynchrone,
+    /// via `callAsyncJavaScript`). Elles lisent les produits décrits pour les moteurs de recherche
+    /// (JSON-LD, microdonnées schema.org), les fiches produit affichées (nom, marque, prix, contenance, promo),
+    /// sinon les « cartes produit » visibles. `extract(doc)` sert aussi aux pages suivantes, téléchargées à part.
+    static let functions = #"""
+    var LIMIT = 1000;
+    var out = [];
+    var seen = {};
+    var base = document.baseURI;
+    function clean(text) { return text ? String(text).replace(/\s+/g, ' ').trim() : ''; }
+    function add(name, price, gtin, image, brand, quantity, promo) {
+      if (out.length >= LIMIT || !name || price === undefined || price === null) return;
+      name = clean(name);
+      var p = typeof price === 'number' ? price : parseFloat(String(price).replace(/[^0-9,.]/g, '').replace(',', '.'));
+      if (!(p > 0 && p < 1000) || name.length < 3) return;
+      brand = clean(brand);
+      // "AUCHAN Oeufs de poules…" (marque AUCHAN) -> "Oeufs de poules…".
+      if (brand && name.toLowerCase().indexOf(brand.toLowerCase() + ' ') === 0 && name.length > brand.length + 3) {
+        name = name.slice(brand.length + 1).trim();
       }
-      // Premier prix d'un texte qui n'est pas un prix au kilo / au litre : "2.99", "2,99 €", "2€99".
-      function priceIn(text) {
-        var re = /(\d{1,3})\s?[,.€]\s?(\d{2})(?!\d)\s?€?(\s?\/\s?(kg|l|kilo|litre|unité|pièce))?/gi;
-        var m;
-        while ((m = re.exec(text || '')) !== null) { if (!m[3]) return parseFloat(m[1] + '.' + m[2]); }
-        return null;
+      var key = [brand, name, quantity || '', p.toFixed(2)].join('|').toLowerCase();
+      if (seen[key]) return;
+      seen[key] = true;
+      out.push({ name: name.slice(0, 160), price: Math.round(p * 100) / 100,
+                 gtin: gtin ? String(gtin) : null, image: image ? String(image) : null,
+                 brand: brand && brand.length <= 40 && brand.toLowerCase() !== name.toLowerCase() ? brand : null,
+                 quantity: quantity || null,
+                 promo: promo ? true : false,
+                 oldPrice: promo && promo.old > p ? Math.round(promo.old * 100) / 100 : null });
+    }
+    // Premier prix d'un texte qui n'est pas un prix au kilo / au litre : "2.99", "2,99 €", "2€99".
+    function priceIn(text) {
+      var re = /(\d{1,3})\s?[,.€]\s?(\d{2})(?!\d)\s?€?(\s?\/\s?(kg|l|kilo|litre|unité|pièce))?/gi;
+      var m;
+      while ((m = re.exec(text || '')) !== null) { if (!m[3]) return parseFloat(m[1] + '.' + m[2]); }
+      return null;
+    }
+    function textOf(el) { return el ? clean(el.innerText || el.textContent) : ''; }
+    // Prix barrés (sélecteurs précis : « old » seul attraperait « price-holder », « bold »…).
+    var OLD_PRICE = 'del, s, strike, [class*="old-price" i], [class*="oldprice" i], [class*="old_price" i], ' +
+                    '[class*="price-old" i], [class*="price--old" i], [class*="price__old" i], [class*="strike" i], ' +
+                    '[class*="crossed" i], [class*="barre" i], [class*="was-price" i], [class*="wasprice" i], ' +
+                    '[class*="previous-price" i], [class*="price-before" i], [class*="before-price" i]';
+    // Texte d'une case prix sans le prix barré (« 3,29 € 2,49 € » -> « 2,49 € »).
+    function priceText(el) {
+      var copy = el.cloneNode(true);
+      copy.querySelectorAll(OLD_PRICE).forEach(function (x) { x.remove(); });
+      return clean(copy.textContent);
+    }
+    // Promo : ancien prix barré plus élevé, ou badge « promo », « -30 % », « 2 + 1 offert »…
+    function promoOf(tile, price) {
+      var olds = tile.querySelectorAll(OLD_PRICE);
+      for (var i = 0; i < olds.length; i++) {
+        var old = priceIn(textOf(olds[i]));
+        if (old && old > price) return { old: old };
       }
-      function textOf(el) { return el ? clean(el.innerText || el.textContent) : ''; }
-      // Prix barrés (sélecteurs précis : « old » seul attraperait « price-holder », « bold »…).
-      var OLD_PRICE = 'del, s, strike, [class*="old-price" i], [class*="oldprice" i], [class*="old_price" i], ' +
-                      '[class*="price-old" i], [class*="price--old" i], [class*="price__old" i], [class*="strike" i], ' +
-                      '[class*="crossed" i], [class*="barre" i], [class*="was-price" i], [class*="wasprice" i], ' +
-                      '[class*="previous-price" i], [class*="price-before" i], [class*="before-price" i]';
-      // Texte d'une case prix sans le prix barré (« 3,29 € 2,49 € » -> « 2,49 € »).
-      function priceText(el) {
-        var copy = el.cloneNode(true);
-        copy.querySelectorAll(OLD_PRICE).forEach(function (x) { x.remove(); });
-        return clean(copy.textContent);
+      var badges = tile.querySelectorAll('[class*="promo" i], [class*="discount" i], [class*="reduction" i], [class*="sticker" i], [class*="flag" i], [class*="badge" i]');
+      for (var j = 0; j < badges.length; j++) {
+        if (/promo|offert|remise|réduction|-\s?\d{1,2}\s?%|\d\s?\+\s?\d/i.test(textOf(badges[j]))) return { old: null };
       }
-      // Promo : ancien prix barré plus élevé, ou badge « promo », « -30 % », « 2 + 1 offert »…
-      function promoOf(tile, price) {
-        var olds = tile.querySelectorAll(OLD_PRICE);
-        for (var i = 0; i < olds.length; i++) {
-          var old = priceIn(textOf(olds[i]));
-          if (old && old > price) return { old: old };
+      return null;
+    }
+    // Premier élément non vide parmi des sélecteurs classés du plus sûr au moins sûr.
+    function firstOf(root, selectors) {
+      for (var i = 0; i < selectors.length; i++) {
+        var list = root.querySelectorAll(selectors[i]);
+        for (var j = 0; j < list.length; j++) {
+          if (textOf(list[j]) || list[j].getAttribute('title')) return { el: list[j], selector: selectors[i] };
         }
-        var badges = tile.querySelectorAll('[class*="promo" i], [class*="discount" i], [class*="reduction" i], [class*="sticker" i], [class*="flag" i], [class*="badge" i]');
-        for (var j = 0; j < badges.length; j++) {
-          if (/promo|offert|remise|réduction|-\s?\d{1,2}\s?%|\d\s?\+\s?\d/i.test(textOf(badges[j]))) return { old: null };
-        }
-        return null;
       }
-      // Premier élément non vide parmi des sélecteurs classés du plus sûr au moins sûr.
-      function firstOf(root, selectors) {
-        for (var i = 0; i < selectors.length; i++) {
-          var list = root.querySelectorAll(selectors[i]);
-          for (var j = 0; j < list.length; j++) {
-            if (textOf(list[j]) || list[j].getAttribute('title')) return { el: list[j], selector: selectors[i] };
-          }
-        }
-        return null;
+      return null;
+    }
+    var NAME = ['[class*="product-name" i]', '[class*="productname" i]', '[class*="product-title" i]',
+                '[class*="producttitle" i]', '[class*="product__title" i]', '[class*="product__name" i]',
+                '[itemprop~="name"]', 'h2', 'h3', 'h4', '[class*="title" i]',
+                '[class*="name" i]:not([class*="brand" i])', 'a[title]', 'h1'];
+    var PRICE = ['[class*="label--price" i]', '[class*="current-price" i]', '[class*="currentprice" i]',
+                 '[class*="price__main" i]', '[class*="price-value" i]', '[class*="sale-price" i]',
+                 '[class*="price" i]:not([class*="base" i]):not([class*="old" i]):not([class*="strike" i]):not([class*="unit" i]):not([class*="price-per" i])'];
+    var TILES = '[class*="product-tile" i], [class*="producttile" i], [class*="product-card" i], [class*="productcard" i], ' +
+                '[class*="product-thumbnail" i], [class*="product-item" i], [class*="productitem" i], [class*="product-box" i]';
+    // Contenance : écrite sur la fiche ("250 g"), sinon déduite du prix au kilo ("KG = 9.40" pour 2,35 € -> 250 g).
+    function quantityOf(tile, price) {
+      var unitBoxes = tile.querySelectorAll('[class*="salesunit" i], [class*="sales-unit" i], [class*="quantity" i], ' +
+        '[class*="packaging" i], [class*="weight" i], [class*="attribute" i], [class*="contenance" i]');
+      for (var k = 0; k < unitBoxes.length; k++) {
+        var m = /(\d+(?:[.,]\d+)?)\s*(kg|g|l|cl|ml|pièces?|pcs|unités?)(?![a-zà-ÿ])/i.exec(textOf(unitBoxes[k]));
+        if (m) return m[1].replace(',', '.') + ' ' + m[2].toLowerCase();
       }
-      var NAME = ['[class*="product-name" i]', '[class*="productname" i]', '[class*="product-title" i]',
-                  '[class*="producttitle" i]', '[class*="product__title" i]', '[class*="product__name" i]',
-                  '[itemprop~="name"]', 'h2', 'h3', 'h4', '[class*="title" i]',
-                  '[class*="name" i]:not([class*="brand" i])', 'a[title]', 'h1'];
-      var PRICE = ['[class*="label--price" i]', '[class*="current-price" i]', '[class*="currentprice" i]',
-                   '[class*="price__main" i]', '[class*="price-value" i]', '[class*="sale-price" i]',
-                   '[class*="price" i]:not([class*="base" i]):not([class*="old" i]):not([class*="strike" i]):not([class*="unit" i]):not([class*="price-per" i])'];
-      // Contenance : écrite sur la fiche ("250 g"), sinon déduite du prix au kilo ("KG = 9.40" pour 2,35 € -> 250 g).
-      function quantityOf(tile, price) {
-        var unitBoxes = tile.querySelectorAll('[class*="salesunit" i], [class*="sales-unit" i], [class*="quantity" i], ' +
-          '[class*="packaging" i], [class*="weight" i], [class*="attribute" i], [class*="contenance" i]');
-        for (var k = 0; k < unitBoxes.length; k++) {
-          var m = /(\d+(?:[.,]\d+)?)\s*(kg|g|l|cl|ml|pièces?|pcs|unités?)(?![a-zà-ÿ])/i.exec(textOf(unitBoxes[k]));
-          if (m) return m[1].replace(',', '.') + ' ' + m[2].toLowerCase();
-        }
-        var baseBox = tile.querySelector('[class*="base-price" i], [class*="baseprice" i], [class*="unit-price" i], [class*="price-per" i]');
-        var unit, base, b = null;
-        // Dans la case du prix au kilo : "KG = 9.40" ou "1 kg = 9,40 €".
-        if (baseBox) { b = /\b(kg|l)\b[^0-9]{0,8}(\d{1,4})[,.](\d{2})/i.exec(textOf(baseBox)); }
-        if (b) { unit = b[1].toLowerCase(); base = parseFloat(b[2] + '.' + b[3]); }
-        else {
-          // "9,40 €/kg", dans cette case ou n'importe où sur la fiche.
-          b = /(\d{1,4})[,.](\d{2})\s?€?\s?\/\s?(kg|l)\b/i.exec(baseBox ? textOf(baseBox) : textOf(tile));
-          if (b) { unit = b[3].toLowerCase(); base = parseFloat(b[1] + '.' + b[2]); }
-        }
-        if (!(base > 0) || !(price > 0)) return null;
-        var amount = Math.round(price / base * 1000);
-        if (amount >= 100) amount = Math.round(amount / 5) * 5;
-        if (!(amount > 0)) return null;
-        if (unit === 'kg') return amount >= 1000 ? (amount / 1000) + ' kg' : amount + ' g';
-        return amount >= 1000 ? (amount / 1000) + ' l' : (amount % 10 === 0 ? (amount / 10) + ' cl' : amount + ' ml');
+      var baseBox = tile.querySelector('[class*="base-price" i], [class*="baseprice" i], [class*="unit-price" i], [class*="price-per" i]');
+      var unit, basePrice, b = null;
+      // Dans la case du prix au kilo : "KG = 9.40" ou "1 kg = 9,40 €".
+      if (baseBox) { b = /\b(kg|l)\b[^0-9]{0,8}(\d{1,4})[,.](\d{2})/i.exec(textOf(baseBox)); }
+      if (b) { unit = b[1].toLowerCase(); basePrice = parseFloat(b[2] + '.' + b[3]); }
+      else {
+        // "9,40 €/kg", dans cette case ou n'importe où sur la fiche.
+        b = /(\d{1,4})[,.](\d{2})\s?€?\s?\/\s?(kg|l)\b/i.exec(baseBox ? textOf(baseBox) : textOf(tile));
+        if (b) { unit = b[3].toLowerCase(); basePrice = parseFloat(b[1] + '.' + b[2]); }
       }
-      // Photo : l'image affichée, sinon celle à charger plus tard (data-src, srcset), jamais un pixel d'attente.
-      function imageOf(el) {
-        var img = el.querySelector('img');
-        if (!img) return null;
-        var candidates = [img.currentSrc, img.getAttribute('src'), img.getAttribute('data-src'),
-                          img.getAttribute('data-lazy-src'), (img.getAttribute('srcset') || '').split(' ')[0]];
-        for (var i = 0; i < candidates.length; i++) {
-          var url = candidates[i];
-          if (url && url.indexOf('data:') !== 0) {
-            try { return new URL(url, document.baseURI).href; } catch (e) { return url; }
-          }
+      if (!(basePrice > 0) || !(price > 0)) return null;
+      var amount = Math.round(price / basePrice * 1000);
+      if (amount >= 100) amount = Math.round(amount / 5) * 5;
+      if (!(amount > 0)) return null;
+      if (unit === 'kg') return amount >= 1000 ? (amount / 1000) + ' kg' : amount + ' g';
+      return amount >= 1000 ? (amount / 1000) + ' l' : (amount % 10 === 0 ? (amount / 10) + ' cl' : amount + ' ml');
+    }
+    // Photo : l'image affichée, sinon celle à charger plus tard (data-src, srcset), jamais un pixel d'attente.
+    function imageOf(el) {
+      var img = el.querySelector('img');
+      if (!img) return null;
+      var candidates = [img.currentSrc, img.getAttribute('src'), img.getAttribute('data-src'),
+                        img.getAttribute('data-lazy-src'), (img.getAttribute('srcset') || '').split(' ')[0]];
+      for (var i = 0; i < candidates.length; i++) {
+        var url = candidates[i];
+        if (url && url.indexOf('data:') !== 0) {
+          try { return new URL(url, base).href; } catch (e) { return url; }
         }
-        return null;
       }
-      function fromLD(node) {
+      return null;
+    }
+    function item(name, price, gtin, image, brand, quantity, promo) {
+      return { name: name, price: price, gtin: gtin, image: image, brand: brand, quantity: quantity, promo: promo };
+    }
+    // Données structurées JSON-LD (Product, listes de produits, @graph).
+    function fromLD(doc) {
+      var items = [];
+      function walk(node) {
         if (!node) return;
-        if (Array.isArray(node)) { node.forEach(fromLD); return; }
+        if (Array.isArray(node)) { node.forEach(walk); return; }
         if (typeof node !== 'object') return;
         var type = node['@type'];
         var types = Array.isArray(type) ? type : [type];
@@ -287,69 +313,155 @@ enum DriveCaptureParser {
           var price = offers ? (offers.price || offers.lowPrice) : null;
           var image = Array.isArray(node.image) ? node.image[0] : node.image;
           if (image && typeof image === 'object') image = image.url;
-          add(node.name, price, node.gtin13 || node.gtin || node.gtin8, image);
+          var brand = node.brand && typeof node.brand === 'object' ? node.brand.name : node.brand;
+          if (price) items.push(item(node.name, price, node.gtin13 || node.gtin || node.gtin8, image, brand, null, null));
         }
         if (Array.isArray(node.itemListElement)) {
-          fromLD(node.itemListElement.map(function (e) { return (e && e.item) ? e.item : e; }));
+          walk(node.itemListElement.map(function (e) { return (e && e.item) ? e.item : e; }));
         }
-        if (node['@graph']) fromLD(node['@graph']);
+        if (node['@graph']) walk(node['@graph']);
       }
-      document.querySelectorAll('script[type="application/ld+json"]').forEach(function (s) {
-        try { fromLD(JSON.parse(s.textContent)); } catch (e) {}
+      doc.querySelectorAll('script[type="application/ld+json"]').forEach(function (s) {
+        try { walk(JSON.parse(s.textContent)); } catch (e) {}
       });
-      // Microdonnées : itemprop peut contenir plusieurs mots ("name description" chez Auchan).
-      document.querySelectorAll('[itemtype*="schema.org/Product"]').forEach(function (el) {
+      return items;
+    }
+    // Microdonnées : itemprop peut contenir plusieurs mots ("name description" chez Auchan).
+    function fromMicrodata(doc) {
+      var items = [];
+      doc.querySelectorAll('[itemtype*="schema.org/Product"]').forEach(function (el) {
         var n = el.querySelector('[itemprop~="name"]');
         var p = el.querySelector('[itemprop~="price"]');
+        if (!n || !p) return;
         var g = el.querySelector('[itemprop^="gtin"]');
         var b = el.querySelector('[itemprop~="brand"]');
-        var i = el.querySelector('img');
-        var priceText = p && (p.getAttribute('content') || p.textContent);
-        var value = priceText ? parseFloat(String(priceText).replace(/[^0-9,.]/g, '').replace(',', '.')) : null;
-        add(n && (n.getAttribute('content') || n.textContent),
-            priceText,
-            g && (g.getAttribute('content') || g.textContent),
-            i ? (i.currentSrc || i.src) : null,
-            b && (b.getAttribute('content') || b.textContent),
-            value > 0 ? quantityOf(el, value) : null);
+        var text = p.getAttribute('content') || p.textContent;
+        var value = text ? parseFloat(String(text).replace(/[^0-9,.]/g, '').replace(',', '.')) : null;
+        if (!(value > 0)) return;
+        items.push(item(n.getAttribute('content') || n.textContent, text,
+                        g && (g.getAttribute('content') || g.textContent), imageOf(el),
+                        b && (b.getAttribute('content') || b.textContent), quantityOf(el, value), promoOf(el, value)));
       });
-      // Fiches produit (Aldi, et la plupart des sites) : une fiche = un seul nom de produit.
-      function fromTiles(selector) {
-        document.querySelectorAll(selector).forEach(function (tile) {
-          if (out.length >= 120) return;
-          var found = firstOf(tile, NAME);
-          if (!found || tile.querySelectorAll(found.selector).length !== 1) return;
-          var name = textOf(found.el) || found.el.getAttribute('title');
-          var price = null;
-          for (var i = 0; i < PRICE.length && price === null; i++) {
-            var boxes = tile.querySelectorAll(PRICE[i]);
-            for (var j = 0; j < boxes.length && price === null; j++) { price = priceIn(priceText(boxes[j])); }
-          }
-          if (price === null) return;
-          var brandBox = tile.querySelector('[class*="brand" i], [itemprop~="brand"]');
-          add(name, price, tile.getAttribute('data-gtin') || tile.getAttribute('data-ean'), imageOf(tile),
-              textOf(brandBox), quantityOf(tile, price), promoOf(tile, price));
-        });
+      return items;
+    }
+    // Fiches produit (Aldi, Auchan, Monoprix… et la plupart des sites) : une fiche = un seul nom de produit.
+    function fromTiles(doc) {
+      var items = [];
+      doc.querySelectorAll(TILES).forEach(function (tile) {
+        if (items.length >= LIMIT) return;
+        var found = firstOf(tile, NAME);
+        if (!found || tile.querySelectorAll(found.selector).length !== 1) return;
+        var name = textOf(found.el) || found.el.getAttribute('title');
+        var price = null;
+        for (var i = 0; i < PRICE.length && price === null; i++) {
+          var boxes = tile.querySelectorAll(PRICE[i]);
+          for (var j = 0; j < boxes.length && price === null; j++) { price = priceIn(priceText(boxes[j])); }
+        }
+        if (price === null) return;
+        var brandBox = tile.querySelector('[class*="brand" i], [itemprop~="brand"]');
+        items.push(item(name, price, tile.getAttribute('data-gtin') || tile.getAttribute('data-ean'), imageOf(tile),
+                        textOf(brandBox), quantityOf(tile, price), promoOf(tile, price)));
+      });
+      return items;
+    }
+    // Dernier recours : tout bloc court qui contient un nom et un prix.
+    function fromCards(doc) {
+      var items = [];
+      doc.querySelectorAll('article, li, [class*="product" i], [data-testid*="product" i]').forEach(function (card) {
+        if (items.length >= LIMIT) return;
+        var text = textOf(card);
+        if (text.length < 8 || text.length > 700) return;
+        var price = priceIn(priceText(card));
+        if (price === null) return;
+        var found = firstOf(card, NAME);
+        var title = found ? (found.el.getAttribute('title') || textOf(found.el)) : null;
+        items.push(item(title, price, null, imageOf(card), textOf(card.querySelector('[class*="brand" i]')),
+                        quantityOf(card, price), promoOf(card, price)));
+      });
+      return items;
+    }
+    // Lit une page : la méthode qui trouve le plus de produits (une seule fiche JSON-LD ne cache pas toute une grille).
+    function extract(doc, url) {
+      base = url || doc.baseURI || document.baseURI;
+      var structured = fromLD(doc).concat(fromMicrodata(doc));
+      var tiles = fromTiles(doc);
+      var chosen = tiles.length > structured.length ? tiles : structured;
+      if (chosen.length === 0) chosen = fromCards(doc);
+      chosen.forEach(function (i) { add(i.name, i.price, i.gtin, i.image, i.brand, i.quantity, i.promo); });
+      return chosen.length;
+    }
+    function sleep(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
+    function report() {
+      try { window.webkit.messageHandlers.lemwincher.postMessage({ count: out.length }); } catch (e) {}
+    }
+    function stopped() { return window.__lemwincherStop === true; }
+    function visible(el) { return !!(el.offsetParent || el.getClientRects().length); }
+    // Bouton « Voir plus / Afficher plus / Charger plus » (jamais un lien vers une autre page).
+    function loadMoreButton() {
+      var words = /(voir|afficher|charger|load|show)\s*(plus|more|davantage|la suite|d'autres|tous)|plus de (produits|résultats)|produits suivants|résultats suivants/i;
+      var els = document.querySelectorAll('button, [role="button"], a');
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        var label = clean(el.innerText || el.textContent || el.getAttribute('aria-label') || '');
+        var cls = String(el.getAttribute('class') || '');
+        if (label.length > 40 || !(words.test(label) || /load-?more|show-?more|voir-?plus/i.test(cls))) continue;
+        if (!visible(el) || el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
+        var href = el.tagName === 'A' ? (el.getAttribute('href') || '') : '';
+        if (href && href.indexOf('#') !== 0 && href.indexOf('javascript:') !== 0) continue;
+        return el;
       }
-      if (out.length === 0) {
-        fromTiles('[class*="product-tile" i], [class*="producttile" i], [class*="product-card" i], [class*="productcard" i], ' +
-                  '[class*="product-thumbnail" i], [class*="product-item" i], [class*="productitem" i], [class*="product-box" i]');
+      return null;
+    }
+    // Page suivante d'une liste paginée (lien « suivant », rel="next").
+    function nextPage(doc, from) {
+      var el = doc.querySelector('link[rel="next"], a[rel="next"], a[aria-label*="suivant" i], a[title*="suivant" i], ' +
+                                 'a[aria-label*="next" i], [class*="pagination" i] a[class*="next" i], a[class*="next" i]');
+      var href = el ? el.getAttribute('href') : null;
+      if (!href || href === '#' || href.indexOf('javascript:') === 0) return null;
+      try { return new URL(href, from).href; } catch (e) { return null; }
+    }
+    // Lit TOUS les produits : défile, touche « Voir plus » tant qu'il en vient, puis suit les pages suivantes.
+    async function captureAll(maxMs) {
+      window.__lemwincherStop = false;
+      var start = Date.now();
+      extract(document);
+      report();
+      var last = out.length, quiet = 0;
+      while (!stopped() && Date.now() - start < maxMs && out.length < LIMIT) {
+        window.scrollTo(0, document.documentElement.scrollHeight);
+        await sleep(800);
+        var more = loadMoreButton();
+        if (more) {
+          try { more.scrollIntoView({ block: 'center' }); more.click(); } catch (e) {}
+          await sleep(1500);
+        }
+        extract(document);
+        report();
+        if (out.length > last) { last = out.length; quiet = 0; }
+        else { quiet += 1; if ((!more && quiet >= 2) || quiet >= 4) break; }
       }
-      if (out.length === 0) {
-        var cards = document.querySelectorAll('article, li, [class*="product" i], [data-testid*="product" i]');
-        cards.forEach(function (card) {
-          if (out.length >= 100) return;
-          var text = card.innerText || '';
-          if (text.length < 8 || text.length > 700) return;
-          var price = priceIn(priceText(card));
-          if (price === null) return;
-          var found = firstOf(card, NAME);
-          var title = found ? (found.el.getAttribute('title') || textOf(found.el)) : null;
-          add(title, price, null, imageOf(card), textOf(card.querySelector('[class*="brand" i]')), quantityOf(card, price),
-              promoOf(card, price));
-        });
+      window.scrollTo(0, 0);
+      var url = nextPage(document, document.baseURI), visited = {}, pages = 0;
+      while (url && !visited[url] && pages < 20 && !stopped() && Date.now() - start < maxMs + 30000 && out.length < LIMIT) {
+        visited[url] = true;
+        try {
+          var response = await fetch(url, { credentials: 'include' });
+          var doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+          var before = out.length;
+          extract(doc, url);
+          report();
+          if (out.length === before) break;
+          url = nextPage(doc, url);
+          pages += 1;
+        } catch (e) { break; }
       }
-      return JSON.stringify(out.slice(0, 120));
-    })();
+      return JSON.stringify(out);
+    }
     """#
+
+    /// Lecture de la page telle qu'elle est affichée.
+    static let script = functions + "\nextract(document);\nreturn JSON.stringify(out);"
+
+    /// Lecture de tous les produits : « Voir plus » et pages suivantes (45 s au plus sur la page, puis 30 s de pages).
+    static let fullScript = functions + "\nreturn await captureAll(45000);"
 }

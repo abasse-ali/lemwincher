@@ -119,6 +119,34 @@ final class DriveCaptureTests: XCTestCase {
         XCTAssertEqual(Set(DriveSite.all.map(\.id)).count, DriveSite.all.count)
     }
 
+    func testStartPagesAndStoreSites() throws {
+        let aldi = try XCTUnwrap(DriveSite.all.first { $0.id == "aldi" })
+        XCTAssertEqual(aldi.startURL?.absoluteString, "https://www.aldi.fr/produits.html", "ses rayons")
+        let lidl = try XCTUnwrap(DriveSite.all.first { $0.id == "lidl" })
+        XCTAssertEqual(lidl.startURL?.absoluteString, "https://www.lidl.fr", "son accueil")
+
+        let aldiStore = Fixtures.store("NODE:11247032479", name: "Aldi", brand: "Aldi")
+        XCTAssertEqual(DriveSite.forStore(aldiStore)?.id, "aldi")
+        let corner = Fixtures.store("NODE:9", name: "Épicerie du coin")
+        XCTAssertNil(DriveSite.forStore(corner))
+
+        let custom = DriveSite.custom(for: corner, url: try XCTUnwrap(URL(string: "https://epicerie.example")))
+        XCTAssertEqual(custom.id, "magasin-NODE:9")
+        XCTAssertEqual(custom.name, "Épicerie du coin")
+        XCTAssertEqual(custom.startURL?.absoluteString, "https://epicerie.example")
+        XCTAssertEqual(custom.url(for: "oeufs")?.absoluteString, "https://epicerie.example")
+        XCTAssertFalse(custom.choosesStore)
+        XCTAssertFalse(custom.matches(aldiStore))
+    }
+
+    func testCaptureScriptsReadEverything() {
+        XCTAssertTrue(DriveCaptureParser.fullScript.contains("captureAll"))
+        XCTAssertTrue(DriveCaptureParser.fullScript.hasSuffix("return await captureAll(45000);"))
+        XCTAssertTrue(DriveCaptureParser.script.hasSuffix("return JSON.stringify(out);"))
+        XCTAssertTrue(DriveCaptureParser.functions.contains("loadMoreButton"), "« Voir plus »")
+        XCTAssertTrue(DriveCaptureParser.functions.contains("nextPage"), "pages suivantes")
+    }
+
     func testSentenceCase() {
         XCTAssertEqual(DriveCaptureParser.sentenceCase("CRÈME LÉGÈRE FOUETTÉE"), "Crème légère fouettée")
         XCTAssertEqual(DriveCaptureParser.sentenceCase("Beurre doux extra fin"), "Beurre doux extra fin")

@@ -120,6 +120,20 @@ final class LemwincherUITests: XCTestCase {
         sleep(4)
         snapshot("01-autour-de-moi")
 
+        // Toucher un magasin sur la carte : fiche rapide avec « Rayons et prix sur le site ».
+        let marker = app.maps.firstMatch.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS[c] 'Carrefour City' OR label CONTAINS[c] 'Aldi'")).firstMatch
+        if marker.waitForExistence(timeout: 5) && marker.isHittable {
+            marker.tap()
+            if element(app, "storeQuickDetail").waitForExistence(timeout: 5) {
+                sleep(1)
+                snapshot("01b-carte-fiche-rapide")
+                let close = element(app, "closeQuickSheet")
+                if close.exists { close.tap() }
+                sleep(2)
+            }
+        }
+
         // Carburant et classement d'abord, tant que la liste est en haut
         // (les lignes hors de l'écran n'existent pas pour les tests).
         let fuel = element(app, "fuelLink")
@@ -180,6 +194,16 @@ final class LemwincherUITests: XCTestCase {
             row.tap()
             sleep(5)
             snapshot("03-fiche-magasin")
+            // « Rayons et prix sur le site de l'enseigne » : le navigateur de l'app s'ouvre sur le site.
+            let siteButton = element(app, "storeSiteButton")
+            if siteButton.exists && siteButton.isHittable {
+                siteButton.tap()
+                sleep(15)
+                snapshot("03b-site-de-l-enseigne")
+                let close = app.navigationBars.buttons["Fermer"].firstMatch
+                if close.waitForExistence(timeout: 5) { close.tap() }
+                sleep(2)
+            }
             app.swipeUp()
             sleep(1)
             snapshot("04-fiche-magasin-horaires")
@@ -526,7 +550,11 @@ final class LemwincherUITests: XCTestCase {
         let capture = app.buttons["Capturer les prix de la page"].firstMatch
         guard capture.waitForExistence(timeout: 10) else { return }
         capture.tap()
+        // Lecture de tous les produits (« Voir plus », pages suivantes) : compteur à l'écran, puis la vérification.
         sleep(3)
+        snapshot("19a2-lecture-de-tous-les-produits")
+        _ = app.navigationBars["Prix capturés"].waitForExistence(timeout: 100)
+        sleep(1)
         snapshot("19b-prix-captures-aldi")
         let add = app.navigationBars.buttons["Ajouter"].firstMatch
         if add.waitForExistence(timeout: 5) && add.isEnabled {

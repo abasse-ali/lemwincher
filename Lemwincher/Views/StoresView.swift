@@ -5,10 +5,18 @@ import MapKit
 struct StoresView: View {
     @Environment(AppModel.self) private var model
     @State private var camera: MapCameraPosition = .automatic
+    @State private var path = NavigationPath()
+    /// Magasin touché sur la carte : sa fiche rapide s'ouvre en bas de l'écran.
+    @State private var selectedStoreID: String?
+
+    private var selectedStore: Binding<Store?> {
+        Binding(get: { selectedStoreID.flatMap { id in model.knownStores.first { $0.id == id } } },
+                set: { selectedStoreID = $0?.id })
+    }
 
     var body: some View {
         @Bindable var bindable = model
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if model.referenceLocation == nil {
                     LocationNeededView()
@@ -35,6 +43,15 @@ struct StoresView: View {
                 }
             }
             .appDestinations()
+            .sheet(item: selectedStore) { store in
+                StoreQuickSheet(store: store) {
+                    selectedStoreID = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { path.append(store) }
+                }
+                .presentationDetents([.height(300), .medium])
+                .presentationDragIndicator(.visible)
+                .presentationBackgroundInteraction(.enabled(upThrough: .height(300)))
+            }
         }
         .task(id: model.locationKey) {
             await model.refreshStores()
@@ -49,7 +66,8 @@ struct StoresView: View {
     // MARK: Carte
 
     private var map: some View {
-        Map(position: $camera) {
+        // Toucher un magasin : fiche rapide avec son site (rayons et prix), l'itinéraire et la fiche complète.
+        Map(position: $camera, selection: $selectedStoreID) {
             UserAnnotation()
             if model.settings.useHome, let home = model.settings.home {
                 Marker("Domicile", systemImage: "house.fill", coordinate: home.coordinate)
@@ -58,6 +76,7 @@ struct StoresView: View {
             ForEach(mapStores) { store in
                 Marker(store.name, systemImage: "cart.fill", coordinate: store.coordinate)
                     .tint(markerColor(for: store))
+                    .tag(store.id)
             }
         }
         .frame(height: 230)

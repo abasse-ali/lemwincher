@@ -11,6 +11,8 @@ struct StoreDetailView: View {
     @State private var loadError: String? = nil
     @State private var showAddPrice = false
     @State private var filter = ""
+    /// Site de l'enseigne ou du magasin ouvert dans le navigateur de l'app.
+    @State private var browser: StoreBrowserRequest?
 
     private var observations: [PriceObservation] {
         let mine = model.myObservations(storeID: store.id)
@@ -62,6 +64,8 @@ struct StoreDetailView: View {
                     }
                 }
 
+                StoreSiteButtons(store: store, request: $browser)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 if let url = store.directionsURL {
                     Link(destination: url) {
                         Label("Itinéraire avec Plans", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
@@ -72,8 +76,11 @@ struct StoreDetailView: View {
                         Label("Appeler le magasin", systemImage: "phone.fill")
                     }
                 }
-                if let website = store.websiteURL {
-                    Link(destination: website) {
+                // Site propre du magasin (en plus de celui de l'enseigne), ouvert dans l'app pour en lire les prix.
+                if let website = store.websiteURL, DriveSite.forStore(store) != nil {
+                    Button {
+                        browser = .website(website)
+                    } label: {
                         Label("Site du magasin", systemImage: "safari")
                     }
                 }
@@ -133,6 +140,7 @@ struct StoreDetailView: View {
         .sheet(isPresented: $showAddPrice) {
             AddPriceView(store: store)
         }
+        .storeBrowser($browser, store: store)
         .task { await load() }
         .refreshable { await load() }
     }

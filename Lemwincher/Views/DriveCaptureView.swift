@@ -1,15 +1,61 @@
 import SwiftUI
 import WebKit
 
-/// Navigateur intégré sur le site drive d'une enseigne : l'utilisateur cherche son produit
-/// (et choisit son magasin sur le site), puis l'app lit les prix affichés sur la page.
+/// Navigateur de l'app, avec la lecture des prix : il garde la page web et reçoit l'avancement
+/// de la lecture (« 156 produits lus ») envoyé par le script.
+final class CaptureSession: NSObject, ObservableObject, WKScriptMessageHandler {
+    let webView: WKWebView
+    @Published var running = false
+    @Published var count = 0
+
+    override init() {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .default()
+        // Intermédiaire « faible » : sinon la page web garderait la session en vie (et inversement).
+        let relay = WeakScriptRelay()
+        configuration.userContentController.add(relay, name: "lemwincher")
+        webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.allowsBackForwardNavigationGestures = true
+        super.init()
+        relay.target = self
+    }
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any], let count = body["count"] as? Int else { return }
+        DispatchQueue.main.async { self.count = count }
+    }
+
+    /// Arrête la lecture : le script rend ce qu'il a déjà lu.
+    func stop() {
+        webView.evaluateJavaScript("window.__lemwincherStop = true;")
+    }
+}
+
+private final class WeakScriptRelay: NSObject, WKScriptMessageHandler {
+    weak var target: WKScriptMessageHandler?
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        target?.userContentController(controller, didReceive: message)
+    }
+}
+
+/// Navigateur intégré sur le site d'une enseigne (ou d'un magasin) : on y parcourt les rayons ou on cherche
+/// un produit, puis l'app lit TOUS les produits et leurs prix (« Voir plus » et pages suivantes compris).
 struct DriveCaptureView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
 
     let query: String
+    /// Page à ouvrir d'abord (les rayons de l'enseigne, le site du magasin) plutôt que la recherche.
+    let startURL: URL?
+    /// Magasin d'où l'on vient (carte, fiche) : proposé d'office pour enregistrer les prix.
+    let store: Store?
+    /// Site propre d'un magasin (hors enseignes connues), ajouté en tête de la barre.
+    let customSite: DriveSite?
+
     @State private var site: DriveSite
-    @State private var webView = DriveCaptureView.makeWebView()
+    @StateObject private var session = CaptureSession()
+    @State private var didLoad = false
     /// Prix lus sur la page, transmis tels quels à la feuille de vérification
     /// (avec `sheet(isPresented:)`, la feuille pouvait s'ouvrir avec une liste encore vide).
     @State private var review: CaptureBatch?
@@ -19,23 +65,24 @@ struct DriveCaptureView: View {
         let id = UUID()
         let items: [CapturedPrice]
         let site: DriveSite
+        let store: Store?
     }
 
-    init(query: String, preferredChain: String? = nil) {
+    init(query: String, preferredChain: String? = nil, startURL: URL? = nil, store: Store? = nil,
+         customSite: DriveSite? = nil) {
         self.query = query
+        self.startURL = startURL
+        self.store = store
+        self.customSite = customSite
         let preferred = DriveSite.all.first { site in
             guard let preferredChain else { return false }
             return preferredChain.hasPrefix(site.chainPrefix)
         }
-        _site = State(initialValue: preferred ?? DriveSite.all[1])
+        _site = State(initialValue: customSite ?? preferred ?? DriveSite.all[1])
     }
 
-    private static func makeWebView() -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .default()
-        let view = WKWebView(frame: .zero, configuration: configuration)
-        view.allowsBackForwardNavigationGestures = true
-        return view
+    private var sites: [DriveSite] {
+        (customSite.map { [$0] } ?? []) + DriveSite.all
     }
 
     var body: some View {
@@ -43,7 +90,7 @@ struct DriveCaptureView: View {
             VStack(spacing: 0) {
                 siteBar
                 if site.choosesStore {
-                    // Drives (Leclerc, Carrefour, Auchan, Intermarché, U) : pas de prix tant qu'aucun magasin n'est choisi.
+                    // Drives (Leclerc, Carrefour, Auchan, Intermarché, U…) : pas de prix tant qu'aucun magasin n'est choisi.
                     Label("Choisissez d'abord votre magasin sur le site (une seule fois) : ses prix s'affichent ensuite.",
                           systemImage: "storefront")
                         .font(.caption)
@@ -53,7 +100,10 @@ struct DriveCaptureView: View {
                         .padding(.vertical, 6)
                         .background(Color(.secondarySystemBackground))
                 }
-                WebView(webView: webView)
+                WebView(webView: session.webView)
+                    .overlay(alignment: .bottom) {
+                        if session.running { progressCard }
+                    }
                 if let message {
                     Text(message)
                         .font(.footnote)
@@ -67,12 +117,15 @@ struct DriveCaptureView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Fermer") { dismiss() }
+                    Button("Fermer") {
+                        session.stop()
+                        dismiss()
+                    }
                 }
                 // Le titre est un menu : changer d'enseigne d'un geste, même celles hors de la barre.
                 ToolbarItem(placement: .principal) {
                     Menu {
-                        ForEach(DriveSite.all) { item in
+                        ForEach(sites) { item in
                             Button {
                                 site = item
                             } label: {
@@ -85,7 +138,7 @@ struct DriveCaptureView: View {
                         }
                     } label: {
                         HStack(spacing: 4) {
-                            Text(site.name).font(.headline)
+                            Text(site.name).font(.headline).lineLimit(1)
                             Image(systemName: "chevron.down.circle.fill")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
@@ -96,21 +149,24 @@ struct DriveCaptureView: View {
                 }
                 ToolbarItemGroup(placement: .bottomBar) {
                     Button {
-                        webView.goBack()
+                        session.webView.goBack()
                     } label: {
                         Image(systemName: "chevron.backward")
                     }
+                    .accessibilityLabel("Page précédente")
                     Button {
-                        webView.goForward()
+                        session.webView.goForward()
                     } label: {
                         Image(systemName: "chevron.forward")
                     }
+                    .accessibilityLabel("Page suivante")
                     Spacer()
                     Button {
-                        webView.reload()
+                        session.webView.reload()
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
+                    .accessibilityLabel("Recharger")
                     Spacer()
                     Button {
                         capture()
@@ -119,28 +175,61 @@ struct DriveCaptureView: View {
                             .labelStyle(.titleAndIcon)
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(session.running)
                 }
             }
             .sheet(item: $review) { batch in
-                CaptureReviewView(items: batch.items, site: batch.site) {
+                CaptureReviewView(items: batch.items, site: batch.site, preferredStore: batch.store) {
                     dismiss()
                 }
             }
-            .onAppear { load() }
+            .onAppear {
+                guard !didLoad else { return }
+                didLoad = true
+                if let startURL {
+                    session.webView.load(URLRequest(url: startURL))
+                } else {
+                    load()
+                }
+            }
             .onChange(of: site) { _, _ in load() }
         }
+    }
+
+    /// Pendant la lecture : nombre de produits déjà lus, et « Arrêter » pour vérifier ce qui est lu.
+    private var progressCard: some View {
+        HStack(spacing: 12) {
+            ProgressView()
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Lecture de tous les produits…")
+                    .font(.subheadline.weight(.semibold))
+                Text(session.count == 1 ? "1 produit lu" : "\(session.count) produits lus")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button("Arrêter") { session.stop() }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("stopCapture")
+        }
+        .padding(14)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
+        .padding(12)
+        .accessibilityIdentifier("captureProgress")
     }
 
     private var siteBar: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(DriveSite.all) { item in
+                    ForEach(sites) { item in
                         Button {
                             site = item
                         } label: {
                             Text(item.name)
                                 .font(.subheadline.weight(.semibold))
+                                .lineLimit(1)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
                                 .background(item == site ? Color.brand : Color(.tertiarySystemFill), in: Capsule())
@@ -164,20 +253,28 @@ struct DriveCaptureView: View {
         .background(.bar)
     }
 
+    /// Recherche du produit sur le site choisi (ou ses rayons / son accueil si rien n'est cherché).
     private func load() {
         message = nil
-        guard let url = site.url(for: query) else { return }
-        webView.load(URLRequest(url: url))
+        let url = query.trimmed.isEmpty ? site.startURL : site.url(for: query)
+        guard let url else { return }
+        session.webView.load(URLRequest(url: url))
     }
 
+    /// Lit tous les produits : défile, « Voir plus », pages suivantes ; « Arrêter » rend ce qui est déjà lu.
     private func capture() {
         message = nil
-        webView.evaluateJavaScript(DriveCaptureParser.script) { result, _ in
-            let found = DriveCaptureParser.parse(result as? String ?? "[]")
+        session.count = 0
+        session.running = true
+        session.webView.callAsyncJavaScript(DriveCaptureParser.fullScript, arguments: [:], in: nil,
+                                            in: .page) { result in
+            session.running = false
+            let json = (try? result.get()) as? String ?? "[]"
+            let found = DriveCaptureParser.parse(json)
             if found.isEmpty {
-                message = "Aucun prix lisible sur cette page. Ouvrez une page de résultats ou de produit (choisissez votre magasin si le site le demande), puis réessayez."
+                message = "Aucun prix lisible sur cette page. Ouvrez un rayon ou une recherche (choisissez votre magasin si le site le demande), puis réessayez."
             } else {
-                review = CaptureBatch(items: found, site: site)
+                review = CaptureBatch(items: found, site: site, store: store)
             }
         }
     }
@@ -190,17 +287,22 @@ struct CaptureReviewView: View {
 
     @State var items: [CapturedPrice]
     let site: DriveSite
+    /// Magasin d'où l'on a ouvert le site (carte, fiche) : choisi d'office.
+    let preferredStore: Store?
     let onSaved: () -> Void
 
     @State private var storeID = ""
+    /// Filtre de la liste (utile quand des centaines de produits ont été lus).
+    @State private var filter = ""
 
-    init(items: [CapturedPrice], site: DriveSite, onSaved: @escaping () -> Void) {
+    init(items: [CapturedPrice], site: DriveSite, preferredStore: Store? = nil, onSaved: @escaping () -> Void) {
         _items = State(initialValue: items)
         self.site = site
+        self.preferredStore = preferredStore
         self.onSaved = onSaved
     }
 
-    private var storeChoices: [Store] { model.storesByDistance() }
+    private var storeChoices: [Store] { model.storesByDistance(including: preferredStore) }
     private var selectedStore: Store? { storeChoices.first { $0.id == storeID } }
     private var includedCount: Int { items.filter(\.include).count }
 
@@ -227,6 +329,8 @@ struct CaptureReviewView: View {
 
                 Section {
                     ForEach($items) { $item in
+                        if filter.trimmed.isEmpty || item.name.localizedCaseInsensitiveContains(filter.trimmed)
+                            || (item.brand ?? "").localizedCaseInsensitiveContains(filter.trimmed) {
                         HStack(spacing: 10) {
                             Button {
                                 item.include.toggle()
@@ -263,15 +367,27 @@ struct CaptureReviewView: View {
                             }
                             .fixedSize()
                         }
+                        }
                     }
                 } header: {
-                    Text("\(includedCount) prix lus sur \(site.name)")
+                    HStack {
+                        Text("\(includedCount)/\(items.count) prix lus sur \(site.name)")
+                        Spacer()
+                        Button(includedCount == items.count ? "Tout décocher" : "Tout cocher") {
+                            let include = includedCount != items.count
+                            for index in items.indices { items[index].include = include }
+                        }
+                        .font(.caption.weight(.semibold))
+                        .textCase(nil)
+                    }
                 } footer: {
                     Text("Décochez ce qui ne correspond pas. Les prix sont ajoutés à « Mes prix » pour votre usage personnel ; ils ne sont pas partagés sur Open Prices.")
                 }
             }
             .navigationTitle("Prix capturés")
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $filter, placement: .navigationBarDrawer(displayMode: .automatic),
+                        prompt: "Filtrer les produits lus")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Annuler") { dismiss() }
@@ -282,7 +398,10 @@ struct CaptureReviewView: View {
                 }
             }
             .onAppear {
-                if storeID.isEmpty, let store = storeChoices.first(where: { site.matches($0) }) {
+                guard storeID.isEmpty else { return }
+                if let preferredStore {
+                    storeID = preferredStore.id
+                } else if let store = storeChoices.first(where: { site.matches($0) }) {
                     storeID = store.id
                 }
             }
