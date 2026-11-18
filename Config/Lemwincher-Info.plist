@@ -14,5 +14,15 @@
 	<!-- Minuteurs du mode cuisine dans la Dynamic Island et sur l'écran verrouillé. -->
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<!-- Écran de lancement : le citron sur fond vert (vert très sombre en mode sombre). -->
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+		<key>UIImageName</key>
+		<string>LaunchMark</string>
+		<key>UIImageRespectsSafeAreaInsets</key>
+		<false/>
+	</dict>
 </dict>
 </plist>

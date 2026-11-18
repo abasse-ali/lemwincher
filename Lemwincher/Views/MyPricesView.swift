@@ -160,7 +160,7 @@ struct PriceChangeRow: View {
     var body: some View {
         let up = change.delta > 0
         HStack(spacing: 12) {
-            ProductThumb(url: change.product.imageURL, size: 40)
+            ProductThumb(url: change.product.imageURL, size: 40, name: change.product.name)
             VStack(alignment: .leading, spacing: 2) {
                 Text(change.product.name).lineLimit(1)
                 Text(Fmt.join(change.storeName,
@@ -182,7 +182,7 @@ struct MyPriceRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ProductThumb(url: entry.product.imageURL, size: 44)
+            ProductThumb(url: entry.product.imageURL, size: 44, name: entry.product.name)
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.product.name).lineLimit(2)
                 Text(Fmt.join(entry.store.name, Fmt.day(entry.date), entry.source))

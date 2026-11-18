@@ -6,14 +6,15 @@ struct OnboardingView: View {
     @State private var page = 0
 
     private struct Page {
-        let icon: String
+        /// nil : le logo de l'app (première page).
+        let icon: String?
         let color: Color
         let title: String
         let text: String
     }
 
     private let pages: [Page] = [
-        Page(icon: "cart.fill", color: Color.brand,
+        Page(icon: nil, color: Color.brand,
              title: "Payez moins cher vos courses",
              text: "Parcourez des centaines de milliers de produits par rayon, faites votre liste (« Œufs » vous propose les vrais produits et leur prix), et l'app vous dit où acheter au meilleur prix."),
         Page(icon: "eurosign.circle.fill", color: Color.purple,
@@ -34,7 +35,7 @@ struct OnboardingView: View {
         VStack(spacing: 0) {
             TabView(selection: $page) {
                 ForEach(pages.indices, id: \.self) { index in
-                    pageView(pages[index])
+                    pageView(pages[index], active: index == page)
                         .tag(index)
                 }
             }
@@ -64,17 +65,38 @@ struct OnboardingView: View {
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
         }
+        // Halo de la couleur de la page en haut de l'écran.
+        .background(alignment: .top) {
+            LinearGradient(colors: [pages[page].color.opacity(0.28), pages[page].color.opacity(0)],
+                           startPoint: .top, endPoint: .center)
+                .ignoresSafeArea()
+                .animation(.easeInOut(duration: 0.4), value: page)
+        }
+        .sensoryFeedback(.selection, trigger: page)
         .interactiveDismissDisabled()
     }
 
-    private func pageView(_ page: Page) -> some View {
+    private func pageView(_ page: Page, active: Bool) -> some View {
         VStack(spacing: 22) {
             Spacer()
-            Image(systemName: page.icon)
-                .font(.system(size: 64, weight: .semibold))
-                .foregroundStyle(Color.white)
-                .frame(width: 130, height: 130)
-                .background(page.color.gradient, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+            if let icon = page.icon {
+                Image(systemName: icon)
+                    .font(.system(size: 64, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .symbolEffect(.bounce, value: active)
+                    .frame(width: 130, height: 130)
+                    .background(page.color.gradient, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+                    .shadow(color: page.color.opacity(0.35), radius: 16, y: 8)
+            } else {
+                VStack(spacing: 14) {
+                    BrandLogo(size: 136)
+                        .scaleEffect(active ? 1 : 0.85)
+                        .animation(.spring(response: 0.5, dampingFraction: 0.6), value: active)
+                    Text("Lemwincher")
+                        .font(.title3.weight(.heavy))
+                        .foregroundStyle(Color.brand)
+                }
+            }
             Text(page.title)
                 .font(.title.bold())
                 .multilineTextAlignment(.center)

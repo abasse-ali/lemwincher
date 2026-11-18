@@ -1,11 +1,7 @@
 import SwiftUI
 import UIKit
 
-// MARK: - Couleurs, formats, extensions
-
-extension Color {
-    static let brand = Color(red: 0.09, green: 0.60, blue: 0.32)
-}
+// MARK: - Formats, extensions (couleurs et logo : Theme.swift)
 
 extension String {
     var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -23,8 +19,11 @@ extension Error {
 }
 
 enum Fmt {
+    /// Format français quelle que soit la langue de l'iPhone : « 2,35 € », « 1 500 KMF ».
+    private static let french = Locale(identifier: "fr_FR")
+
     static func price(_ value: Double, _ currency: String) -> String {
-        value.formatted(.currency(code: currency))
+        value.formatted(.currency(code: currency).locale(french))
     }
 
     static func distance(_ meters: Double) -> String {
@@ -103,17 +102,23 @@ extension View {
 
 // MARK: - Petits composants
 
+/// Photo d'un produit sur fond blanc (les photos des fiches sont prises sur fond blanc : elles restent
+/// nettes en mode sombre) ; sans photo, un emoji d'après son nom (🥚 Œufs, 🍌 Bananes) ou un panier.
 struct ProductThumb: View {
     let url: String?
     var size: CGFloat = 44
+    /// Nom du produit, pour l'emoji de remplacement.
+    var name: String? = nil
 
     var body: some View {
         ZStack {
-            Color(.secondarySystemBackground)
             if let url, let imageURL = URL(string: url) {
                 AsyncImage(url: imageURL) { phase in
                     if let image = phase.image {
-                        image.resizable().scaledToFit()
+                        ZStack {
+                            Color.white
+                            image.resizable().scaledToFit().padding(size * 0.06)
+                        }
                     } else {
                         placeholder
                     }
@@ -123,44 +128,72 @@ struct ProductThumb: View {
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.2, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
     }
 
     private var placeholder: some View {
-        Image(systemName: "basket")
-            .font(.system(size: size * 0.4))
-            .foregroundStyle(.secondary)
+        ZStack {
+            Color(.tertiarySystemFill)
+            if let emoji = name.flatMap({ ProductEmoji.emoji(for: $0) }) {
+                Text(emoji)
+                    .font(.system(size: size * 0.52))
+                    .accessibilityHidden(true)
+            } else {
+                Image(systemName: "basket")
+                    .font(.system(size: size * 0.4))
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 }
 
+/// Logo d'un magasin sur fond blanc ; s'il manque, l'initiale de l'enseigne sur sa couleur,
+/// sinon une vitrine verte.
 struct StoreLogo: View {
     let url: String?
     var size: CGFloat = 40
     var systemImage: String = "storefront.fill"
+    /// Enseigne (clé de `Chain.key` ou nom) : son initiale et sa couleur quand le logo manque.
+    var chainKey: String? = nil
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
+    }
 
     var body: some View {
         ZStack {
-            Color.brand.opacity(0.12)
             if let url, let logoURL = URL(string: url) {
                 AsyncImage(url: logoURL) { phase in
                     if let image = phase.image {
-                        image.resizable().scaledToFit().padding(4)
+                        ZStack {
+                            Color.white
+                            image.resizable().scaledToFit().padding(size * 0.1)
+                        }
                     } else {
-                        icon
+                        fallback
                     }
                 }
             } else {
-                icon
+                fallback
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.25, style: .continuous))
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
     }
 
-    private var icon: some View {
-        Image(systemName: systemImage)
-            .font(.system(size: size * 0.45))
-            .foregroundStyle(Color.brand)
+    @ViewBuilder
+    private var fallback: some View {
+        if let style = ChainStyle.forChain(chainKey) {
+            ChainMonogram(style: style, size: size)
+        } else {
+            ZStack {
+                Color.brand.opacity(0.14)
+                Image(systemName: systemImage)
+                    .font(.system(size: size * 0.45))
+                    .foregroundStyle(Color.brand)
+            }
+        }
     }
 }
 
@@ -565,7 +598,7 @@ struct ProductRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ProductThumb(url: product.imageURL, size: 44)
+            ProductThumb(url: product.imageURL, size: 44, name: product.name)
             VStack(alignment: .leading, spacing: 2) {
                 Text(product.name).lineLimit(2)
                 let details = Fmt.join(product.brand, product.quantity)
@@ -588,7 +621,7 @@ struct ObservationRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ProductThumb(url: obs.imageURL, size: 44)
+            ProductThumb(url: obs.imageURL, size: 44, name: obs.productName)
             VStack(alignment: .leading, spacing: 2) {
                 Text(obs.productName).lineLimit(2)
                 Text(Fmt.join(showStore ? Optional(obs.storeName) : obs.brand,
@@ -683,7 +716,8 @@ struct ChainEstimateRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            StoreLogo(url: nearestStore?.displayLogoURL ?? Chain.logoURL(brand: estimate.name), size: 34)
+            StoreLogo(url: nearestStore?.displayLogoURL ?? Chain.logoURL(brand: estimate.name), size: 34,
+                      chainKey: nearestStore?.chainKey ?? estimate.name)
             VStack(alignment: .leading, spacing: 2) {
                 Text(estimate.name).font(.headline).lineLimit(1)
                 Text(subtitle)
@@ -713,7 +747,7 @@ struct StoreRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            StoreLogo(url: store.displayLogoURL)
+            StoreLogo(url: store.displayLogoURL, chainKey: store.chainKey)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
                     Text(store.name).font(.headline).lineLimit(1)

@@ -389,7 +389,7 @@ struct WatchRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ProductThumb(url: item.product.imageURL, size: 44)
+            ProductThumb(url: item.product.imageURL, size: 44, name: item.product.name)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.product.name).lineLimit(2)
                 Text(subtitle)

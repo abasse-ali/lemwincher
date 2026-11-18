@@ -11,7 +11,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.3.0"
+    MARKETING_VERSION: "1.4.0"
     CURRENT_PROJECT_VERSION: "1"
 
 targets:
@@ -39,8 +39,11 @@ targets:
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Lemwincher utilise votre position pour trouver les supermarchés et les stations-service autour de vous et comparer leurs prix."
         INFOPLIST_KEY_NSCameraUsageDescription: "La caméra sert à scanner les codes-barres, à lire les étiquettes de prix et les tickets de caisse."
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
-        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        # Écran de lancement (citron sur fond vert) : clé UILaunchScreen de Config/Lemwincher-Info.plist.
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
+        # Couleurs et images appelées par leur nom (Color("Brand")) : pas d'extensions générées
+        # qui entreraient en conflit avec Color.brand.
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: "NO"
         ENABLE_PREVIEWS: "YES"
         CODE_SIGN_STYLE: Automatic
 

@@ -74,12 +74,28 @@ struct StoresView: View {
                     .tint(Color.blue)
             }
             ForEach(mapStores) { store in
-                Marker(store.name, systemImage: "cart.fill", coordinate: store.coordinate)
-                    .tint(markerColor(for: store))
-                    .tag(store.id)
+                storeMarker(store)
             }
         }
         .frame(height: 230)
+    }
+
+    /// Épingle d'un magasin : l'initiale de l'enseigne sur sa couleur (« E » bleu pour Leclerc),
+    /// une étoile jaune pour les favoris, un caddie gris pour les autres commerces.
+    @MapContentBuilder
+    private func storeMarker(_ store: Store) -> some MapContent {
+        let favorite = model.isFavorite(store)
+        let style = ChainStyle.forChain(store.chainKey)
+        if let style, !favorite {
+            Marker(store.name, monogram: Text(style.monogram), coordinate: store.coordinate)
+                .tint(Color(chain: style))
+                .tag(store.id)
+        }
+        if favorite || style == nil {
+            Marker(store.name, systemImage: favorite ? "star.fill" : "cart.fill", coordinate: store.coordinate)
+                .tint(markerColor(for: store))
+                .tag(store.id)
+        }
     }
 
     /// Sur la carte : les 80 magasins les plus proches et les favoris (la liste, elle, est complète).
@@ -95,7 +111,7 @@ struct StoresView: View {
     }
 
     private func markerColor(for store: Store) -> Color {
-        if model.isFavorite(store) { return Color.yellow }
+        if model.isFavorite(store) { return Color.lemon }
         if (store.priceCount ?? 0) > 0 { return Color.brand }
         return store.isSupermarket ? Color.gray : Color.gray.opacity(0.6)
     }
@@ -164,7 +180,7 @@ struct StoresView: View {
                 }
             } footer: {
                 if let source = model.storesSource {
-                    Text("Sources : \(source). Sur la carte : en vert les magasins avec des prix relevés, en jaune vos favoris. Horaires : OpenStreetMap (quand ils sont connus).")
+                    Text("Sources : \(source). Sur la carte : chaque enseigne a sa couleur et son initiale (E pour E.Leclerc, L pour Lidl…), ★ vos magasins, en vert les autres magasins avec des prix relevés. Horaires : OpenStreetMap (quand ils sont connus).")
                 }
             }
         }
@@ -252,7 +268,8 @@ struct ChainRankRow: View {
                 .frame(width: 24, height: 24)
                 .background(rank == 1 ? Color.brand : Color(.tertiarySystemFill), in: Circle())
                 .foregroundStyle(rank == 1 ? Color.white : Color.primary)
-            StoreLogo(url: store?.displayLogoURL ?? Chain.logoURL(brand: entry.name), size: 34)
+            StoreLogo(url: store?.displayLogoURL ?? Chain.logoURL(brand: entry.name), size: 34,
+                      chainKey: store?.chainKey ?? entry.key)
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.name).font(.headline).lineLimit(1)
                 if let store {

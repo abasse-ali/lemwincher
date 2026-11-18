@@ -38,6 +38,9 @@ jobs:
           xcrun simctl list devices available | grep "$UDID"
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
           xcrun simctl boot "$UDID" || true
+          # L'iPhone de l'utilisateur est en mode sombre : les captures d'écran aussi.
+          xcrun simctl bootstatus "$UDID" -b || true
+          xcrun simctl ui "$UDID" appearance dark || true
 
       - name: Compiler pour le simulateur (app + tests)
         run: |
@@ -70,6 +73,7 @@ jobs:
         timeout-minutes: 35
         run: |
           UDID="${{ steps.sim.outputs.udid }}"
+          xcrun simctl ui "$UDID" appearance dark || true
           # Le simulateur de GitHub rate parfois son démarrage (« AX loaded notification ») : on le relance une fois.
           for attempt in 1 2; do
             rm -rf results/ui-tests.xcresult
@@ -87,6 +91,7 @@ jobs:
             xcrun simctl shutdown "$UDID" || true
             xcrun simctl boot "$UDID" || true
             sleep 30
+            xcrun simctl ui "$UDID" appearance dark || true
           done
           exit 1
 

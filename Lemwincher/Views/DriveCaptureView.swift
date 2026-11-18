@@ -452,7 +452,7 @@ struct CaptureReviewView: View {
                                     .foregroundStyle(item.include ? Color.brand : Color.secondary)
                             }
                             .buttonStyle(.plain)
-                            ProductThumb(url: item.image, size: 36)
+                            ProductThumb(url: item.image, size: 36, name: item.name)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.name).font(.subheadline).lineLimit(2)
                                 let details = Fmt.join(item.brand, item.quantity)

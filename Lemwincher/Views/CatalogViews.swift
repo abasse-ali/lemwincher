@@ -296,7 +296,7 @@ struct CatalogRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ProductThumb(url: item.product.imageURL, size: 52)
+            ProductThumb(url: item.product.imageURL, size: 52, name: item.product.name)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.product.name).lineLimit(2)
                 let details = Fmt.join(item.product.brand, item.product.quantity)

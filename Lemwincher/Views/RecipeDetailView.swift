@@ -219,7 +219,7 @@ struct RecipeDetailView: View {
             ForEach(shopping, id: \.self) { name in
                 if let suggestion = prices[name], let offer = suggestion.offer {
                     HStack(spacing: 10) {
-                        ProductThumb(url: suggestion.product.imageURL, size: 36)
+                        ProductThumb(url: suggestion.product.imageURL, size: 36, name: suggestion.product.name)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(suggestion.product.name).font(.subheadline).lineLimit(1)
                             Text(Fmt.join(name, offer.storeName, Fmt.day(offer.date)))

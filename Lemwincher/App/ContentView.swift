@@ -24,6 +24,8 @@ struct ContentView: View {
                 .tabItem { Label("Budget", systemImage: "eurosign.circle.fill") }
                 .tag(AppTab.budget)
         }
+        // Apparence choisie dans les Réglages (sinon celle de l'iPhone).
+        .preferredColorScheme(model.settings.appearance.colorScheme)
         // Réglages : roue dentée ⚙︎ en haut des écrans (5 onglets tiennent sur l'iPhone sans « Plus »).
         .sheet(isPresented: $bindable.showSettings) {
             SettingsView(isSheet: true)

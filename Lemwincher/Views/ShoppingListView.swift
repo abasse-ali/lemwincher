@@ -582,7 +582,7 @@ struct ShoppingRow: View {
                 .accessibilityLabel(item.checked ? "Acheté (décocher)" : "Cocher : acheté")
                 .accessibilityIdentifier("checkItem")
 
-                ProductThumb(url: item.choice?.imageURL ?? item.product.imageURL, size: 36)
+                ProductThumb(url: item.choice?.imageURL ?? item.product.imageURL, size: 36, name: item.product.name)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.product.name)
@@ -741,7 +741,7 @@ struct SuggestionRow: View {
                 HStack(spacing: 10) {
                     Image(systemName: chosen ? "checkmark.circle.fill" : "circle")
                         .foregroundStyle(chosen ? Color.brand : Color.secondary)
-                    ProductThumb(url: suggestion.product.imageURL, size: 36)
+                    ProductThumb(url: suggestion.product.imageURL, size: 36, name: suggestion.product.name)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(suggestion.product.name)
                             .font(.subheadline)

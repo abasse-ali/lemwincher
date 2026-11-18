@@ -31,15 +31,21 @@ struct StoreDetailView: View {
                 Map(initialPosition: .region(MKCoordinateRegion(center: store.coordinate,
                                                                  latitudinalMeters: 700,
                                                                  longitudinalMeters: 700))) {
-                    Marker(store.name, systemImage: "cart.fill", coordinate: store.coordinate)
-                        .tint(Color.brand)
+                    if let style = ChainStyle.forChain(store.chainKey) {
+                        Marker(store.name, monogram: Text(style.monogram), coordinate: store.coordinate)
+                            .tint(Color(chain: style))
+                    }
+                    if ChainStyle.forChain(store.chainKey) == nil {
+                        Marker(store.name, systemImage: "cart.fill", coordinate: store.coordinate)
+                            .tint(Color.brand)
+                    }
                     UserAnnotation()
                 }
                 .frame(height: 180)
                 .listRowInsets(EdgeInsets())
 
                 HStack(alignment: .top, spacing: 12) {
-                    StoreLogo(url: store.displayLogoURL, size: 48)
+                    StoreLogo(url: store.displayLogoURL, size: 48, chainKey: store.chainKey)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(store.name).font(.title2.bold())
                         if let address = store.address {

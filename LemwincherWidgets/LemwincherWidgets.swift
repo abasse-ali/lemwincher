@@ -9,8 +9,8 @@ struct LemwincherWidgetsBundle: WidgetBundle {
     }
 }
 
-/// Vert Lemwincher.
-private let brand = Color(red: 0.13, green: 0.62, blue: 0.36)
+/// Vert Lemwincher, version lumineuse (la Dynamic Island et l'activité sur l'écran verrouillé sont sur fond noir).
+private let brand = Color(red: 0.204, green: 0.78, blue: 0.482)
 
 /// Minuteur de cuisine : écran verrouillé + Dynamic Island (iPhone 15).
 struct CookingTimerLiveActivity: Widget {

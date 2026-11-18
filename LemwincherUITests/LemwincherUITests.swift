@@ -366,6 +366,10 @@ final class LemwincherUITests: XCTestCase {
             app.swipeUp()
             sleep(1)
             snapshot("18b-reglages-suite")
+            // Tout en bas : le logo, le nom et la version de l'app.
+            for _ in 0..<6 { app.swipeUp(velocity: .fast) }
+            sleep(1)
+            snapshot("18c-reglages-a-propos")
             let close = element(app, "closeSettings")
             if close.waitForExistence(timeout: 3) { close.tap() }
             sleep(1)

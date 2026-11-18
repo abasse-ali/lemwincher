@@ -180,7 +180,7 @@ struct TrackedProductRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            ProductThumb(url: latest.product.imageURL, size: 40)
+            ProductThumb(url: latest.product.imageURL, size: 40, name: latest.product.name)
             VStack(alignment: .leading, spacing: 2) {
                 Text(latest.product.name)
                     .font(.subheadline)

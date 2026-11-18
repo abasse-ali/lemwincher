@@ -217,7 +217,7 @@ struct ProductCompareView: View {
 
     private var productHeader: some View {
         HStack(alignment: .top, spacing: 14) {
-            ProductThumb(url: product.imageURL, size: 84)
+            ProductThumb(url: product.imageURL, size: 84, name: product.name)
             VStack(alignment: .leading, spacing: 4) {
                 Text(product.name).font(.title3.bold())
                 if let brand = product.brand {
@@ -242,9 +242,8 @@ struct ProductCompareView: View {
             Button {
                 model.addToList(product)
             } label: {
-                Label(inList ? "Dans ma liste" : "Ajouter à ma liste",
-                      systemImage: inList ? "checkmark" : "cart.badge.plus")
-                    .frame(maxWidth: .infinity)
+                ActionTileLabel(title: inList ? "Dans ma liste" : "Ajouter à ma liste",
+                                systemImage: inList ? "checkmark.circle.fill" : "cart.badge.plus")
             }
             .buttonStyle(.borderedProminent)
             .disabled(inList)
@@ -252,8 +251,7 @@ struct ProductCompareView: View {
             Button {
                 showAddPrice = true
             } label: {
-                Label("Relever un prix", systemImage: "plus")
-                    .frame(maxWidth: .infinity)
+                ActionTileLabel(title: "Relever un prix", systemImage: "tag")
             }
             .buttonStyle(.bordered)
         }
@@ -530,7 +528,7 @@ struct AlternativeRow: View {
     var body: some View {
         let obs = alternative.obs
         HStack(spacing: 12) {
-            ProductThumb(url: obs.imageURL, size: 44)
+            ProductThumb(url: obs.imageURL, size: 44, name: obs.productName)
             VStack(alignment: .leading, spacing: 2) {
                 Text(obs.productName).lineLimit(2)
                 Text(Fmt.join(obs.brand, obs.quantity, obs.chainName ?? obs.storeName))

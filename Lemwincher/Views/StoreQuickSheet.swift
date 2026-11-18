@@ -84,7 +84,7 @@ struct StoreQuickSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 12) {
-                StoreLogo(url: store.displayLogoURL, size: 52)
+                StoreLogo(url: store.displayLogoURL, size: 52, chainKey: store.chainKey)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(store.name)
                         .font(.title3.bold())

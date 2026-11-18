@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#16A35F"/>
+      <stop offset="1" stop-color="#075A34"/>
+    </linearGradient>
+    <linearGradient id="lemon" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#FFEB70"/>
+      <stop offset="1" stop-color="#F6BE00"/>
+    </linearGradient>
+    <linearGradient id="leaf" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#A6F09A"/>
+      <stop offset="1" stop-color="#47C762"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#03301A" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <!-- feuille (derrière le citron) -->
+  <g transform="translate(-10 58) rotate(-20 512 560)">
+    <path d="M 690 330 C 740 210 860 180 930 205 C 905 300 800 365 700 352 Z" fill="url(#leaf)"/>
+    <path d="M 704 344 C 770 300 845 250 915 212" fill="none" stroke="#2E9E4B" stroke-width="10" stroke-linecap="round"/>
+  </g>
+  <g transform="rotate(-20 512 560)" filter="url(#shadow)">
+    <path d="M 150 560 Q 180 534 222 520 C 270 380 410 345 512 345 C 614 345 754 380 802 520 Q 844 534 874 560 Q 844 586 802 600 C 754 740 614 775 512 775 C 410 775 270 740 222 600 Q 180 586 150 560 Z"
+          fill="url(#lemon)"/>
+    <path d="M 300 470 C 350 410 420 390 500 386" fill="none" stroke="#FFFFFF" stroke-opacity="0.6"
+          stroke-width="28" stroke-linecap="round"/>
+  </g>
+  <text x="512" y="672" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="900"
+        font-size="300" fill="#0B7A43">€</text>
+</svg>

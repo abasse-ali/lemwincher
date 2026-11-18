@@ -77,6 +77,13 @@ struct SettingsView: View {
                 accountSection
 
                 Section {
+                    Picker(selection: $bindable.state.settings.appearance) {
+                        ForEach(AppAppearance.allCases) { appearance in
+                            Text(appearance.label).tag(appearance)
+                        }
+                    } label: {
+                        Label("Apparence", systemImage: "circle.lefthalf.filled")
+                    }
                     Picker("Devise", selection: $bindable.state.settings.currency) {
                         ForEach(AppSettings.currencies, id: \.self) { code in
                             Text(code).tag(code)
@@ -90,7 +97,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Préférences")
                 } footer: {
-                    Text("La devise sert à vos relevés, aux prix affichés et au total du panier. Le carburant est celui affiché dans « Autour de moi ».")
+                    Text("Apparence : « Comme l'iPhone » suit le mode clair ou sombre de l'iPhone. La devise sert à vos relevés, aux prix affichés et au total du panier. Le carburant est celui affiché dans « Autour de moi ».")
                 }
 
                 backupSection
@@ -127,7 +134,25 @@ struct SettingsView: View {
                         confirmReset = true
                     }
                 } footer: {
-                    Text("Lemwincher \(appVersion) · vos données restent sur votre iPhone. Astuce Siri : « Ajoute à ma liste Lemwincher ».")
+                    Text("Vos données restent sur votre iPhone. Astuce Siri : « Ajoute à ma liste Lemwincher ».")
+                }
+
+                Section {
+                    VStack(spacing: 8) {
+                        BrandLogo(size: 64)
+                        Text("Lemwincher")
+                            .font(.headline)
+                        Text("Le moins cher, près de chez vous")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Text("Version \(appVersion)")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .listRowBackground(Color.clear)
+                    .accessibilityElement(children: .combine)
                 }
             }
             .navigationTitle("Réglages")
@@ -216,7 +241,7 @@ struct SettingsView: View {
             }
             ForEach(model.settings.favoriteStores) { store in
                 HStack {
-                    StoreLogo(url: store.displayLogoURL, size: 30)
+                    StoreLogo(url: store.displayLogoURL, size: 30, chainKey: store.chainKey)
                     VStack(alignment: .leading) {
                         Text(store.name)
                         if let address = store.address {

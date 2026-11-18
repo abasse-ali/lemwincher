@@ -281,6 +281,8 @@ struct AppSettings: Codable, Hashable {
     var defaultServings: Int = 1
     /// Mode cuisine : lire chaque étape à voix haute.
     var readStepsAloud: Bool = false
+    /// Clair, sombre, ou comme l'iPhone.
+    var appearance: AppAppearance = .system
 
     static let currencies = ["EUR", "KMF", "XOF", "XAF", "MGA", "MUR", "MAD", "DZD", "TND", "CHF", "GBP", "USD", "CAD"]
 
@@ -312,6 +314,22 @@ struct AppSettings: Codable, Hashable {
         vegetarian = (try? c.decode(Bool.self, forKey: .vegetarian)) ?? false
         defaultServings = min(max((try? c.decode(Int.self, forKey: .defaultServings)) ?? 1, 1), 12)
         readStepsAloud = (try? c.decode(Bool.self, forKey: .readStepsAloud)) ?? false
+        appearance = (try? c.decode(AppAppearance.self, forKey: .appearance)) ?? .system
+    }
+}
+
+/// Apparence de l'app (Réglages › Préférences).
+enum AppAppearance: String, Codable, CaseIterable, Identifiable {
+    case system, light, dark
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .system: return "Comme l'iPhone"
+        case .light: return "Clair"
+        case .dark: return "Sombre"
+        }
     }
 }
 
