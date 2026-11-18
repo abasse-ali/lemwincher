@@ -464,14 +464,19 @@ enum DriveCaptureParser {
 
     /// Lecture de tous les produits : « Voir plus » et pages suivantes (45 s au plus sur la page, puis 30 s de pages).
     /// Le résultat revient par message (« done ») ; `window.__lemwincherOut` garde ce qui est lu en cas d'arrêt.
-    static let fullScript = "(function () {\n" + functions + """
+    static let fullScript = captureScript(maxMs: 45000)
+
+    /// Même lecture, avec une durée maximale sur la page (plus courte pour les mises à jour automatiques).
+    static func captureScript(maxMs: Int) -> String {
+        "(function () {\n" + functions + """
 
         window.__lemwincherOut = out;
         function done(json) {
           try { window.webkit.messageHandlers.lemwincher.postMessage({ done: json }); } catch (e) {}
         }
-        captureAll(45000).then(done, function () { done(JSON.stringify(out)); });
+        captureAll(\(maxMs)).then(done, function () { done(JSON.stringify(out)); });
         })();
         true;
         """
+    }
 }

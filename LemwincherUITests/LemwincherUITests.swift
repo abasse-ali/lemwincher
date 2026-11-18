@@ -561,6 +561,24 @@ final class LemwincherUITests: XCTestCase {
             add.tap()
             sleep(3)
             snapshot("19c-liste-avec-prix-aldi")
+
+            // Le rayon capturé est gardé en mémoire (« Mes rayons en ligne », onglet Produits) et se met à jour.
+            tab(app, "Produits")
+            sleep(2)
+            let tracked = element(app, "trackedPageRow")
+            reveal(tracked, in: app)
+            if tracked.waitForExistence(timeout: 5) && tracked.isHittable {
+                snapshot("19d-mes-rayons-en-ligne")
+                tracked.tap()
+                sleep(2)
+                snapshot("19e-rayon-suivi")
+                let refresh = element(app, "refreshTrackedPage")
+                if refresh.waitForExistence(timeout: 3) {
+                    refresh.tap()
+                    sleep(50)
+                    snapshot("19f-rayon-mis-a-jour")
+                }
+            }
         } else {
             let close = app.buttons["Annuler"].firstMatch
             if close.exists { close.tap() }

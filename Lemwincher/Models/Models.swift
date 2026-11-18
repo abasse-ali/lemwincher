@@ -327,6 +327,8 @@ struct PersistedState: Codable, Equatable {
     var favoriteRecipes: [String] = []
     /// Menu de la semaine (identifiants des recettes, dans l'ordre des jours).
     var weekMenu: [String] = []
+    /// Rayons des sites d'enseignes gardés en mémoire, relus automatiquement.
+    var trackedPages: [TrackedPage] = []
 
     init() {}
 
@@ -340,6 +342,7 @@ struct PersistedState: Codable, Equatable {
         expenses = ((try? c.decode([Lossy<Expense>].self, forKey: .expenses)) ?? []).compactMap(\.value)
         favoriteRecipes = (try? c.decode([String].self, forKey: .favoriteRecipes)) ?? []
         weekMenu = (try? c.decode([String].self, forKey: .weekMenu)) ?? []
+        trackedPages = ((try? c.decode([Lossy<TrackedPage>].self, forKey: .trackedPages)) ?? []).compactMap(\.value)
     }
 }
 

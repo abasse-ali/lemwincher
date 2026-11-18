@@ -3,21 +3,72 @@ import WebKit
 
 /// Navigateur de l'app, avec la lecture des prix : il garde la page web et reçoit l'avancement
 /// de la lecture (« 156 produits lus ») envoyé par le script.
-final class CaptureSession: NSObject, ObservableObject, WKScriptMessageHandler {
+final class CaptureSession: NSObject, ObservableObject, WKScriptMessageHandler, WKNavigationDelegate {
     let webView: WKWebView
     @Published var running = false
     @Published var count = 0
 
-    override init() {
+    /// `viewport` : taille de la page pour une lecture invisible (mise à jour automatique des rayons suivis).
+    init(viewport: CGRect = .zero) {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         // Intermédiaire « faible » : sinon la page web garderait la session en vie (et inversement).
         let relay = WeakScriptRelay()
         configuration.userContentController.add(relay, name: "lemwincher")
-        webView = WKWebView(frame: .zero, configuration: configuration)
+        webView = WKWebView(frame: viewport, configuration: configuration)
         webView.allowsBackForwardNavigationGestures = true
         super.init()
         relay.target = self
+    }
+
+    // MARK: Lecture invisible d'une page (rayons suivis)
+
+    private var loadCompletion: ((Bool) -> Void)?
+
+    /// Charge une page sans l'afficher ; `completion` une seule fois (chargée, échec ou 30 s écoulées).
+    func load(_ url: URL, completion: @escaping (Bool) -> Void) {
+        loadCompletion = completion
+        webView.navigationDelegate = self
+        webView.load(URLRequest(url: url))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+            self?.finishLoad(false)
+        }
+    }
+
+    private func finishLoad(_ ok: Bool) {
+        guard let completion = loadCompletion else { return }
+        loadCompletion = nil
+        completion(ok)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        finishLoad(true)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        finishLoad(false)
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        finishLoad(false)
+    }
+
+    /// Charge la page, laisse le site afficher ses produits (3 s), puis lit tout ce qu'elle contient.
+    @MainActor
+    func capture(url: URL, maxMs: Int) async -> String {
+        await withCheckedContinuation { continuation in
+            load(url) { [weak self] ok in
+                guard let self, ok else {
+                    continuation.resume(returning: "[]")
+                    return
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    self.start(script: DriveCaptureParser.captureScript(maxMs: maxMs)) { json in
+                        continuation.resume(returning: json)
+                    }
+                }
+            }
+        }
     }
 
     /// Lecture en cours : identifiant (une réponse tardive d'une lecture précédente est ignorée) et suite.
@@ -109,6 +160,9 @@ struct DriveCaptureView: View {
         let items: [CapturedPrice]
         let site: DriveSite
         let store: Store?
+        /// Page lue (rayon, recherche) : gardée en mémoire pour être relue automatiquement.
+        let pageURL: URL?
+        let pageTitle: String?
     }
 
     init(query: String, preferredChain: String? = nil, startURL: URL? = nil, store: Store? = nil,
@@ -222,7 +276,8 @@ struct DriveCaptureView: View {
                 }
             }
             .sheet(item: $review) { batch in
-                CaptureReviewView(items: batch.items, site: batch.site, preferredStore: batch.store) {
+                CaptureReviewView(items: batch.items, site: batch.site, preferredStore: batch.store,
+                                  pageURL: batch.pageURL, pageTitle: batch.pageTitle) {
                     dismiss()
                 }
             }
@@ -312,7 +367,8 @@ struct DriveCaptureView: View {
             if found.isEmpty {
                 message = "Aucun prix lisible sur cette page. Ouvrez un rayon ou une recherche (choisissez votre magasin si le site le demande), puis réessayez."
             } else {
-                review = CaptureBatch(items: found, site: site, store: store)
+                review = CaptureBatch(items: found, site: site, store: store,
+                                      pageURL: session.webView.url, pageTitle: session.webView.title)
             }
         }
     }
@@ -327,16 +383,23 @@ struct CaptureReviewView: View {
     let site: DriveSite
     /// Magasin d'où l'on a ouvert le site (carte, fiche) : choisi d'office.
     let preferredStore: Store?
+    let pageURL: URL?
+    let pageTitle: String?
     let onSaved: () -> Void
 
     @State private var storeID = ""
     /// Filtre de la liste (utile quand des centaines de produits ont été lus).
     @State private var filter = ""
+    /// Garder ce rayon en mémoire et le relire automatiquement.
+    @State private var track = true
 
-    init(items: [CapturedPrice], site: DriveSite, preferredStore: Store? = nil, onSaved: @escaping () -> Void) {
+    init(items: [CapturedPrice], site: DriveSite, preferredStore: Store? = nil, pageURL: URL? = nil,
+         pageTitle: String? = nil, onSaved: @escaping () -> Void) {
         _items = State(initialValue: items)
         self.site = site
         self.preferredStore = preferredStore
+        self.pageURL = pageURL
+        self.pageTitle = pageTitle
         self.onSaved = onSaved
     }
 
@@ -362,6 +425,18 @@ struct CaptureReviewView: View {
                         Text("Choisissez le magasin sélectionné sur le site \(site.name). Les prix en ligne peuvent différer légèrement de ceux en rayon.")
                     } else {
                         Text("Le site \(site.name) affiche les prix de l'enseigne, sans choix de magasin : indiquez celui où vous faites vos courses. Les prix en rayon peuvent différer légèrement.")
+                    }
+                }
+
+                if pageURL != nil {
+                    Section {
+                        Toggle(isOn: $track) {
+                            Label("Garder ce rayon et le mettre à jour automatiquement", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .tint(Color.brand)
+                        .accessibilityIdentifier("trackPage")
+                    } footer: {
+                        Text("Ses produits restent dans « Mes rayons en ligne » (onglet Produits) ; leurs prix sont relus à l'ouverture de l'app, au plus toutes les 12 h, et vous êtes prévenu des baisses.")
                     }
                 }
 
@@ -446,15 +521,10 @@ struct CaptureReviewView: View {
         }
     }
 
+    /// Prix dans « Mes prix » (sans doublon : un prix inchangé est daté du jour) et, si demandé, rayon suivi.
     private func save() {
         guard let store = selectedStore else { return }
-        for item in items where item.include {
-            var entry = MyPrice(product: item.product, store: store, price: item.price,
-                                currency: model.settings.currency, date: Date())
-            entry.source = "site \(site.name)"
-            entry.isDiscounted = item.promo
-            model.addMyPrice(entry)
-        }
+        model.recordCapture(items, site: site, store: store, pageURL: pageURL, pageTitle: pageTitle, track: track)
         dismiss()
         onSaved()
     }

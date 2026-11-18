@@ -95,6 +95,9 @@ extension View {
             .navigationDestination(for: Recipe.self) { recipe in
                 RecipeDetailView(recipe: recipe)
             }
+            .navigationDestination(for: TrackedPageRoute.self) { route in
+                TrackedPageView(pageID: route.id)
+            }
     }
 }
 

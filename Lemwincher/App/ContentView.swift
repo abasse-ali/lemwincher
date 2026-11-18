@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         @Bindable var bindable = model
@@ -34,6 +35,17 @@ struct ContentView: View {
         }
         .onChange(of: model.state) { _, _ in
             model.save()
+        }
+        // Rayons suivis : relus à chaque retour dans l'app (au plus toutes les 12 h par rayon).
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { await model.refreshTrackedPages() }
+            }
+        }
+        .task {
+            // Au lancement, après le chargement des magasins et des prix.
+            try? await Task.sleep(for: .seconds(10))
+            await model.refreshTrackedPages()
         }
         .fullScreenCover(isPresented: Binding(
             get: { !model.state.settings.hasSeenOnboarding },

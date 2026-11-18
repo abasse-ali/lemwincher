@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 import CoreLocation
 import Observation
 
@@ -668,6 +669,93 @@ final class AppModel {
     func addMyPrice(_ price: MyPrice) {
         state.myPrices.append(price)
         remember(price.product)
+    }
+
+    // MARK: Rayons des sites gardés en mémoire
+
+    /// Mise à jour des rayons suivis en cours (affichée dans « Mes rayons en ligne »).
+    var trackedRefreshing = false
+
+    /// Enregistre une capture : les prix dans « Mes prix » (sans doublon), et la page parmi les rayons suivis.
+    @discardableResult
+    func recordCapture(_ items: [CapturedPrice], site: DriveSite, store: Store, pageURL: URL?,
+                       pageTitle: String?, track: Bool) -> [PriceUpdate] {
+        let currency = state.settings.currency
+        let result = CaptureUpdater.apply(items, to: state.myPrices, store: store, currency: currency,
+                                          source: "site \(site.name)")
+        state.myPrices = result.prices
+        for update in result.updates where update.kind != .unchanged {
+            remember(update.product)
+        }
+        guard track, let pageURL, pageURL.scheme?.hasPrefix("http") == true else { return result.updates }
+        let codes = result.updates.map(\.product.code)
+        if let index = state.trackedPages.firstIndex(where: { $0.url == pageURL.absoluteString && $0.store.id == store.id }) {
+            var page = state.trackedPages[index]
+            page.productCodes = Array(Set(page.productCodes + codes)).sorted()
+            page.lastChecked = Date()
+            page.lastError = nil
+            page.lastChanges = result.updates.filter { $0.kind != .unchanged }.count
+            state.trackedPages[index] = page
+        } else {
+            state.trackedPages.append(TrackedPage(url: pageURL.absoluteString,
+                                                  title: pageTitle?.nilIfBlank ?? site.name,
+                                                  siteName: site.name,
+                                                  store: store,
+                                                  productCodes: Array(Set(codes)).sorted(),
+                                                  lastChecked: Date()))
+        }
+        return result.updates
+    }
+
+    /// Relit les rayons suivis (ceux qui n'ont pas été lus depuis 12 h, ou `only` tout de suite) dans un
+    /// navigateur invisible, met à jour leurs prix et prévient des baisses.
+    @MainActor
+    func refreshTrackedPages(only id: UUID? = nil, force: Bool = false) async {
+        // Pendant les tests d'interface : seulement sur demande (bouton « Mettre à jour maintenant »).
+        guard !trackedRefreshing, !isUITest || id != nil || force else { return }
+        let due = state.trackedPages.filter { page in
+            if let id { return page.id == id }
+            return force || page.isDue()
+        }
+        guard !due.isEmpty else { return }
+        trackedRefreshing = true
+        defer { trackedRefreshing = false }
+        let session = CaptureSession(viewport: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let currency = state.settings.currency
+        for page in due {
+            guard let url = URL(string: page.url) else { continue }
+            let json = await session.capture(url: url, maxMs: 25_000)
+            let items = DriveCaptureParser.parse(json)
+            guard let index = state.trackedPages.firstIndex(where: { $0.id == page.id }) else { continue }
+            state.trackedPages[index].lastChecked = Date()
+            guard !items.isEmpty else {
+                state.trackedPages[index].lastError = "Aucun prix lu : la page a peut-être changé, ou le site demande de choisir le magasin."
+                continue
+            }
+            let result = CaptureUpdater.apply(items, to: state.myPrices, store: page.store, currency: currency,
+                                              source: "site \(page.siteName)")
+            state.myPrices = result.prices
+            let codes = result.updates.map(\.product.code)
+            state.trackedPages[index].productCodes = Array(Set(state.trackedPages[index].productCodes + codes)).sorted()
+            state.trackedPages[index].lastChanges = result.updates.filter { $0.kind != .unchanged }.count
+            state.trackedPages[index].lastError = nil
+            if !isUITest,
+               let summary = CaptureUpdater.dropsSummary(result.updates, currency: currency, storeName: page.store.name) {
+                Notifier.notify(title: "Baisse de prix · \(page.shortTitle)", body: summary, id: "rayon-\(page.id.uuidString)")
+            }
+        }
+    }
+
+    /// Derniers prix des produits d'un rayon suivi, avec le prix précédent (pour ↓ ↑).
+    func trackedProducts(_ page: TrackedPage) -> [TrackedProduct] {
+        let codes = Set(page.productCodes)
+        let entries = state.myPrices.filter { codes.contains($0.product.code) && $0.store.id == page.store.id }
+        return Dictionary(grouping: entries, by: \.product.code).values.compactMap { list -> TrackedProduct? in
+            let sorted = list.sorted { $0.date > $1.date }
+            guard let latest = sorted.first else { return nil }
+            return TrackedProduct(latest: latest, previous: sorted.dropFirst().first)
+        }
+        .sorted { $0.latest.product.name.localizedCaseInsensitiveCompare($1.latest.product.name) == .orderedAscending }
     }
 
     func markShared(_ id: UUID, priceID: Int) {

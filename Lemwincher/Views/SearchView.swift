@@ -157,6 +157,8 @@ struct SearchView: View {
             Text("Des centaines de milliers de produits vendus en France, avec leur photo, leur Nutri-Score et les prix relevés.")
         }
 
+        TrackedPagesSection()
+
         watchlistSection
 
         recallsSection
