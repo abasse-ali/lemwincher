@@ -233,11 +233,12 @@ final class LemwincherUITests: XCTestCase {
         let eggs = app.staticTexts["Œufs"].firstMatch
         if eggs.waitForExistence(timeout: 5) {
             eggs.tap()
-            _ = element(app, "suggestion").waitForExistence(timeout: 30)
-            sleep(3)
+            // Pas de requête d'accessibilité pendant le chargement des prix (lente sur les Mac de GitHub) :
+            // on attend, on photographie, puis on cherche un produit avec une requête ciblée.
+            sleep(25)
             snapshot("13b-liste-oeufs-deplies")
-            let first = element(app, "suggestion")
-            if first.exists && first.isHittable {
+            let first = app.buttons.matching(identifier: "suggestion").firstMatch
+            if first.waitForExistence(timeout: 10) && first.isHittable {
                 first.tap()
                 sleep(2)
                 snapshot("13c-liste-oeufs-choisis")
