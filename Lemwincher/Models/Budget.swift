@@ -157,6 +157,33 @@ struct SavingsTip: Hashable {
 }
 
 enum BudgetEngine {
+    /// Dépense d'un article coché dans « Ma liste » : montant payé pour la quantité, au centime.
+    static func purchase(of item: ShoppingItem, amount: Double, storeName: String?, store: Store?,
+                         date: Date = Date()) -> Expense {
+        Expense(amount: (amount * 100).rounded() / 100,
+                date: date,
+                storeName: store?.name ?? storeName,
+                storeID: store?.id,
+                chainKey: store?.chainKey,
+                category: .groceries,
+                note: purchaseNote(item.pricedProduct.name, quantity: item.quantity),
+                itemCount: item.quantity)
+    }
+
+    /// Quantité changée sur un article déjà coché : la dépense suit (même prix unitaire).
+    static func rescaled(_ expense: Expense, from old: Int, to new: Int, name: String) -> Expense {
+        guard old > 0, new > 0, old != new else { return expense }
+        var updated = expense
+        updated.amount = (expense.amount / Double(old) * Double(new) * 100).rounded() / 100
+        updated.itemCount = new
+        updated.note = purchaseNote(name, quantity: new)
+        return updated
+    }
+
+    private static func purchaseNote(_ name: String, quantity: Int) -> String {
+        quantity > 1 ? "\(quantity) × \(name)" : name
+    }
+
     /// Période qui contient `date`. Le jour de départ est ramené entre 1 et 28.
     static func period(containing date: Date, startDay: Int, calendar: Calendar = .current) -> BudgetPeriod {
         let day = min(max(startDay, 1), 28)

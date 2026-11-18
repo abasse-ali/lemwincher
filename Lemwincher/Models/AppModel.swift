@@ -456,6 +456,43 @@ final class AppModel {
         state.expenses.removeAll { ids.contains($0.id) }
     }
 
+    // MARK: Articles cochés = achetés = dépenses
+
+    /// Coche un article (acheté) ; avec un montant, il devient une dépense du mois.
+    func checkListItem(_ id: UUID, amount: Double?, storeName: String?, store: Store?) {
+        guard let index = state.shoppingList.firstIndex(where: { $0.id == id }) else { return }
+        state.shoppingList[index].checked = true
+        guard let amount, amount > 0 else { return }
+        let expense = BudgetEngine.purchase(of: state.shoppingList[index], amount: amount,
+                                            storeName: storeName, store: store)
+        state.shoppingList[index].expenseID = expense.id
+        addExpense(expense)
+    }
+
+    /// Décoche un article : sa dépense est retirée du budget.
+    func uncheckListItem(_ id: UUID) {
+        guard let index = state.shoppingList.firstIndex(where: { $0.id == id }) else { return }
+        if let expenseID = state.shoppingList[index].expenseID {
+            deleteExpenses(ids: [expenseID])
+        }
+        state.shoppingList[index].checked = false
+        state.shoppingList[index].expenseID = nil
+    }
+
+    /// Dépense liée à un article coché (nil si elle a été supprimée depuis le budget).
+    func listExpense(for item: ShoppingItem) -> Expense? {
+        guard let id = item.expenseID else { return nil }
+        return state.expenses.first { $0.id == id }
+    }
+
+    /// Quantité changée sur un article coché : sa dépense suit.
+    func rescaleListExpense(itemID: UUID, from old: Int, to new: Int) {
+        guard let item = state.shoppingList.first(where: { $0.id == itemID }), item.checked,
+              let expense = listExpense(for: item),
+              let index = state.expenses.firstIndex(where: { $0.id == expense.id }) else { return }
+        state.expenses[index] = BudgetEngine.rescaled(expense, from: old, to: new, name: item.pricedProduct.name)
+    }
+
     /// Économie possible ce mois-ci en allant dans l'enseigne la moins chère du quartier.
     var savingsTip: SavingsTip? {
         BudgetEngine.savingsTip(expenses: budgetSummary.expenses, report: chainIndex, nearbyChains: nearestStoreByChain)

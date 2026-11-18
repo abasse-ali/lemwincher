@@ -271,6 +271,20 @@ final class LemwincherUITests: XCTestCase {
             sleep(1)
         }
 
+        // Cocher un article = acheté = dépense du mois (prix inconnu ici : l'app demande le montant).
+        let check = element(app, "checkItem")
+        if check.waitForExistence(timeout: 5) && check.isHittable {
+            check.tap()
+            let amountField = app.alerts.firstMatch.textFields.firstMatch
+            if amountField.waitForExistence(timeout: 5) {
+                amountField.typeText("3,39")
+                snapshot("13d-prix-paye")
+                app.alerts.firstMatch.buttons["Ajouter au budget"].tap()
+            }
+            sleep(2)
+            snapshot("13e-article-coche-depense")
+        }
+
         app.swipeUp()
         sleep(1)
         snapshot("14-ma-liste-magasins")

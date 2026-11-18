@@ -156,6 +156,40 @@ struct BasketResult {
 
     var bestSplitTotal: Double { bestSplit.reduce(0) { $0 + $1.subtotal } }
     var bestSplitStoreCount: Int { Set(bestSplit.map(\.storeKey)).count }
+
+    /// Prix d'un article qu'on vient de cocher (acheté), pour l'ajouter aux dépenses :
+    /// 1. dans le magasin où l'on se trouve (s'il a un prix ; sinon prix à demander pour ce magasin) ;
+    /// 2. sinon dans le meilleur magasin du panier ;
+    /// 3. sinon dans le magasin où il est le moins cher.
+    func purchaseQuote(for itemID: UUID, here: Store?) -> PurchaseQuote {
+        func line(_ basket: StoreBasket) -> BasketLine? { basket.lines.first { $0.item.id == itemID } }
+        let cheapest = stores.compactMap(line).min { $0.price < $1.price }
+        if let here {
+            if let basket = stores.first(where: { $0.storeKey == here.id }), let found = line(basket) {
+                return PurchaseQuote(unitPrice: found.price, storeName: here.name, store: here, hint: found.price)
+            }
+            return PurchaseQuote(unitPrice: nil, storeName: here.name, store: here, hint: cheapest?.price)
+        }
+        if let best = stores.first, let found = line(best) {
+            return PurchaseQuote(unitPrice: found.price, storeName: best.store?.name ?? best.storeName,
+                                 store: best.store, hint: found.price)
+        }
+        if let cheapest, let basket = stores.first(where: { $0.storeKey == cheapest.storeKey }) {
+            return PurchaseQuote(unitPrice: cheapest.price, storeName: basket.store?.name ?? basket.storeName,
+                                 store: basket.store, hint: cheapest.price)
+        }
+        return PurchaseQuote(unitPrice: nil, storeName: nil, store: nil, hint: nil)
+    }
+}
+
+/// Prix retenu pour un article coché.
+struct PurchaseQuote: Equatable {
+    /// Prix unitaire connu ; nil : à demander à l'utilisateur.
+    let unitPrice: Double?
+    let storeName: String?
+    let store: Store?
+    /// Prix connu ailleurs, pour pré-remplir la question.
+    let hint: Double?
 }
 
 // MARK: - Produits moins chers au kilo

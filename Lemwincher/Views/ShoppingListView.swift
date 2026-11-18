@@ -24,6 +24,39 @@ struct ShoppingListView: View {
         var id: String { query }
     }
 
+    /// Article coché dont le prix est inconnu : on demande combien il a coûté.
+    @State private var pricePrompt: PricePrompt?
+    @State private var promptAmount = ""
+
+    struct PricePrompt: Identifiable {
+        let itemID: UUID
+        let name: String
+        let quote: PurchaseQuote
+        var id: UUID { itemID }
+    }
+
+    /// Cocher = acheté : le prix devient une dépense du mois. Décocher la retire.
+    private func toggle(_ item: ShoppingItem) {
+        if item.checked {
+            model.uncheckListItem(item.id)
+            return
+        }
+        let quote = basket.purchaseQuote(for: item.id, here: model.storeAtCurrentPosition())
+        if let unit = quote.unitPrice {
+            model.checkListItem(item.id, amount: unit * Double(item.quantity),
+                                storeName: quote.storeName, store: quote.store)
+        } else {
+            promptAmount = quote.hint.map { String(format: "%.2f", $0 * Double(item.quantity)).replacingOccurrences(of: ".", with: ",") } ?? ""
+            pricePrompt = PricePrompt(itemID: item.id, name: item.pricedProduct.name, quote: quote)
+        }
+    }
+
+    private var promptValue: Double? {
+        let value = Double(promptAmount.replacingOccurrences(of: ",", with: ".").replacingOccurrences(of: " ", with: ""))
+        guard let value, value > 0, value < 10_000 else { return nil }
+        return value
+    }
+
     /// Déplier un article lance la recherche de ses produits précis.
     private func expansion(for item: ShoppingItem) -> Binding<Bool> {
         Binding(
@@ -47,8 +80,9 @@ struct ShoppingListView: View {
 
     // MARK: Calcul du panier
 
+    /// Comparatif des articles qui restent à acheter (les articles cochés sont déjà payés, et comptés au budget).
     private var basket: BasketResult {
-        let items = model.state.shoppingList
+        let items = model.state.shoppingList.filter { !$0.checked }
         let reference = model.referenceLocation
         let radius = model.radiusMeters
         let currency = model.settings.currency
@@ -127,7 +161,7 @@ struct ShoppingListView: View {
                                                    onOpen: { product in path.append(product) },
                                                    onCapture: { query in captureRequest = CaptureRequest(query: query) })
                             } label: {
-                                ShoppingRow(item: $item)
+                                ShoppingRow(item: $item, onToggle: { toggle(item) })
                             }
                             .accessibilityIdentifier("shoppingItem")
                         }
@@ -137,7 +171,7 @@ struct ShoppingListView: View {
                     } header: {
                         Text("Produits (\(model.state.shoppingList.count))")
                     } footer: {
-                        Text("Touchez un article pour voir les produits correspondants et leur prix, puis choisissez celui que vous achetez.")
+                        Text("Touchez un article pour voir les produits correspondants et leur prix, puis choisissez celui que vous achetez. Cochez-le une fois acheté : son prix s'ajoute à vos dépenses du mois.")
                     }
                     if !model.state.settings.favoriteStores.isEmpty {
                         Section {
@@ -195,6 +229,22 @@ struct ShoppingListView: View {
             }
             .sheet(isPresented: $showShoppingDone) {
                 shoppingDoneEditor
+            }
+            .alert("Combien l'avez-vous payé ?",
+                   isPresented: Binding(get: { pricePrompt != nil }, set: { if !$0 { pricePrompt = nil } }),
+                   presenting: pricePrompt) { prompt in
+                TextField("Ex. : 2,29", text: $promptAmount)
+                    .keyboardType(.decimalPad)
+                Button("Ajouter au budget") {
+                    model.checkListItem(prompt.itemID, amount: promptValue,
+                                        storeName: prompt.quote.storeName, store: prompt.quote.store)
+                }
+                Button("Cocher sans dépense") {
+                    model.checkListItem(prompt.itemID, amount: nil, storeName: nil, store: nil)
+                }
+                Button("Annuler", role: .cancel) {}
+            } message: { prompt in
+                Text("Prix de « \(prompt.name) »\(prompt.quote.storeName.map { " chez \($0)" } ?? "") inconnu : indiquez le montant payé, il s'ajoute à vos dépenses du mois.")
             }
             .sheet(item: $captureRequest) { request in
                 // Le site de l'enseigne la plus proche s'ouvre directement sur le produit.
@@ -259,10 +309,11 @@ struct ShoppingListView: View {
         return "Ce panier (\(total) chez \(best.storeName)) dépasse le budget restant de \(Fmt.price(best.total - remaining, currency))."
     }
 
-    /// « J'ai fait mes courses » : dépense pré-remplie avec le meilleur magasin et son total.
+    /// « J'ai fait mes courses » : dépense pré-remplie avec le meilleur magasin et le total
+    /// des articles pas encore cochés (les cochés sont déjà dans le budget).
     private var shoppingDoneEditor: some View {
         let best = basket.stores.first
-        let checked = model.state.shoppingList.filter(\.checked).count
+        let remaining = model.state.shoppingList.filter { !$0.checked }.count
         let prefill = Expense(amount: ((best?.total ?? 0) * 100).rounded() / 100,
                               date: Date(),
                               storeName: best?.store?.name ?? best?.storeName,
@@ -270,16 +321,9 @@ struct ShoppingListView: View {
                               chainKey: best?.store?.chainKey,
                               category: .groceries,
                               note: "Liste de courses",
-                              itemCount: checked > 0 ? checked : model.state.shoppingList.count)
-        let label = checked > 0
-            ? "Retirer les \(checked) produit\(checked > 1 ? "s" : "") coché\(checked > 1 ? "s" : "") de la liste"
-            : "Vider la liste de courses"
-        return ExpenseEditor(expense: nil, prefill: prefill, clearOptionLabel: label) {
-            if model.state.shoppingList.contains(where: \.checked) {
-                model.state.shoppingList.removeAll(where: \.checked)
-            } else {
-                model.state.shoppingList.removeAll()
-            }
+                              itemCount: remaining)
+        return ExpenseEditor(expense: nil, prefill: prefill, clearOptionLabel: "Vider la liste de courses") {
+            model.state.shoppingList.removeAll()
         }
     }
 
@@ -501,18 +545,23 @@ struct ShoppingListView: View {
 // MARK: - Lignes
 
 struct ShoppingRow: View {
+    @Environment(AppModel.self) private var model
     @Binding var item: ShoppingItem
+    /// Cocher / décocher (acheté : dépense ajoutée au budget).
+    var onToggle: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 12) {
             Button {
-                item.checked.toggle()
+                if let onToggle { onToggle() } else { item.checked.toggle() }
             } label: {
                 Image(systemName: item.checked ? "checkmark.circle.fill" : "circle")
                     .font(.title2)
                     .foregroundStyle(item.checked ? Color.brand : Color.secondary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(item.checked ? "Acheté (décocher)" : "Cocher : acheté")
+            .accessibilityIdentifier("checkItem")
 
             ProductThumb(url: item.choice?.imageURL ?? item.product.imageURL, size: 36)
 
@@ -529,12 +578,23 @@ struct ShoppingRow: View {
                 } else if let brand = item.product.brand {
                     Text(brand).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
+                if item.checked, let expense = model.listExpense(for: item) {
+                    Label(Fmt.join(Fmt.price(expense.amount, model.settings.currency) + " dépensés", expense.storeName),
+                          systemImage: "eurosign.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .accessibilityIdentifier("itemExpense")
+                }
             }
             .layoutPriority(1)
 
             Spacer(minLength: 4)
 
             QuantityControl(quantity: $item.quantity)
+                .onChange(of: item.quantity) { old, new in
+                    model.rescaleListExpense(itemID: item.id, from: old, to: new)
+                }
         }
     }
 }

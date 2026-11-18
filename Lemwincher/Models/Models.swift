@@ -211,6 +211,8 @@ struct ShoppingItem: Identifiable, Codable, Hashable {
     var checked: Bool = false
     /// Produit précis choisi sous un article générique ("6 œufs plein air Loué").
     var choice: Product? = nil
+    /// Dépense créée en cochant l'article (acheté) ; retirée si on le décoche.
+    var expenseID: UUID? = nil
 
     /// Le produit dont on compare le prix : le choix s'il existe.
     var pricedProduct: Product { choice ?? product }
