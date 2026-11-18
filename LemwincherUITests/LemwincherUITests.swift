@@ -5,6 +5,26 @@ import XCTest
 final class LemwincherUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = true
+        // Alertes du simulateur lui-même (pas de l'app, qui ne demande rien en mode test) : on les ferme.
+        addUIInterruptionMonitor(withDescription: "Alerte système") { alert in
+            for label in ["Autoriser une fois", "Allow Once", "OK", "Plus tard", "Not Now", "Fermer", "Close",
+                          "Annuler", "Cancel"] where alert.buttons[label].exists {
+                alert.buttons[label].tap()
+                return true
+            }
+            if alert.buttons.count > 0 {
+                alert.buttons.element(boundBy: 0).tap()
+                return true
+            }
+            return false
+        }
+    }
+
+    /// Geste sans effet sur l'écran affiché : laisse XCTest fermer une éventuelle alerte système
+    /// avant de toucher un bouton (sinon le bouton visé devient « invalide » pendant le toucher).
+    private func settle(_ app: XCUIApplication) {
+        app.swipeUp(velocity: .slow)
+        sleep(1)
     }
 
     private func launch(_ extra: [String] = []) -> XCUIApplication {
@@ -70,15 +90,17 @@ final class LemwincherUITests: XCTestCase {
 
     func testOnboarding() {
         let app = launch(["-onboarding"])
-        let next = element(app, "onboardingNext")
-        XCTAssertTrue(next.waitForExistence(timeout: 20))
+        XCTAssertTrue(element(app, "onboardingNext").waitForExistence(timeout: 20))
         snapshot("00-presentation-1")
-        for index in 2...5 {
+        for index in 2...6 {
+            settle(app)
+            // Bouton recherché à chaque page (jamais une référence gardée d'une page à l'autre).
+            let next = element(app, "onboardingNext")
+            guard next.waitForExistence(timeout: 10) else { break }
             next.tap()
             sleep(1)
-            snapshot("00-presentation-\(index)")
+            if index <= 5 { snapshot("00-presentation-\(index)") }
         }
-        next.tap()
         XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 10), "la présentation se ferme")
     }
 
@@ -305,13 +327,16 @@ final class LemwincherUITests: XCTestCase {
     private func captureFromAldi(_ app: XCUIApplication) {
         tab(app, "Ma liste")
         sleep(2)
+        // Revenir tout en haut : « Œufs » figure aussi en bas, dans « Sans prix connu ».
+        scrollDown(until: app.textFields["quickAddField"], in: app, swipes: 12)
+        app.swipeDown()
+        sleep(1)
         let eggs = app.staticTexts["Œufs"].firstMatch
-        scrollDown(until: eggs, in: app)
         guard eggs.waitForExistence(timeout: 5) else { return }
         eggs.tap()
         sleep(3)
         let open = element(app, "captureFromSite")
-        reveal(open, in: app)
+        reveal(open, in: app, swipes: 12)
         guard open.waitForExistence(timeout: 10), open.isHittable else {
             dump(app, "19-bouton-site-introuvable")
             return
