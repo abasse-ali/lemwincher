@@ -26,8 +26,10 @@ struct DriveSite: Identifiable, Hashable {
     }
 
     static let all: [DriveSite] = [
-        DriveSite(id: "leclerc", name: "E.Leclerc", chainPrefix: "e leclerc",
-                  home: "https://www.e.leclerc", searchTemplate: "https://www.e.leclerc/recherche?q={q}"),
+        // Les courses E.Leclerc sont sur Leclerc Drive (e.leclerc ne vend que la marketplace) ;
+        // chaque drive a sa propre adresse : on ouvre l'accueil, où l'on choisit son drive puis on cherche.
+        DriveSite(id: "leclerc", name: "Leclerc Drive", chainPrefix: "e leclerc",
+                  home: "https://www.leclercdrive.fr", searchTemplate: "https://www.leclercdrive.fr"),
         DriveSite(id: "carrefour", name: "Carrefour", chainPrefix: "carrefour",
                   home: "https://www.carrefour.fr", searchTemplate: "https://www.carrefour.fr/s?q={q}"),
         DriveSite(id: "auchan", name: "Auchan", chainPrefix: "auchan",
@@ -65,7 +67,8 @@ struct CapturedPrice: Identifiable, Hashable, Decodable {
     var quantity: String?
     var include: Bool = true
 
-    var id: String { name + "|" + String(format: "%.2f", price) }
+    /// Même nom, marque, contenance et prix = même ligne ("Œufs plein air" Auchan 6 et 12 pièces restent distincts).
+    var id: String { [brand ?? "", name, quantity ?? "", String(format: "%.2f", price)].joined(separator: "|") }
 
     private enum CodingKeys: String, CodingKey {
         case name, price, gtin, image, brand, quantity
@@ -95,9 +98,10 @@ struct CapturedPrice: Identifiable, Hashable, Decodable {
     var product: Product {
         let digits = (gtin ?? "").filter { $0.isASCII && $0.isNumber }
         var product = digits.isBarcodeLike ? Product(code: digits, name: name) : Product.custom(named: name)
-        if !digits.isBarcodeLike, let brand {
-            // Sans code-barres, la marque distingue le « Beurre doux » d'une enseigne de celui d'une autre.
-            product.code = Product.customCode(for: name + " " + brand)
+        if !digits.isBarcodeLike, brand != nil || quantity != nil {
+            // Sans code-barres, la marque et la contenance distinguent le « Beurre doux » d'une enseigne
+            // de celui d'une autre, et la boîte de 6 œufs de celle de 12.
+            product.code = Product.customCode(for: [name, brand, quantity].compactMap { $0 }.joined(separator: " "))
         }
         product.imageURL = image
         product.brand = brand
@@ -144,10 +148,14 @@ enum DriveCaptureParser {
         name = clean(name);
         var p = typeof price === 'number' ? price : parseFloat(String(price).replace(/[^0-9,.]/g, '').replace(',', '.'));
         if (!(p > 0 && p < 1000) || name.length < 3) return;
-        var key = name.toLowerCase() + '|' + p.toFixed(2);
+        brand = clean(brand);
+        // "AUCHAN Oeufs de poules…" (marque AUCHAN) -> "Oeufs de poules…".
+        if (brand && name.toLowerCase().indexOf(brand.toLowerCase() + ' ') === 0 && name.length > brand.length + 3) {
+          name = name.slice(brand.length + 1).trim();
+        }
+        var key = [brand, name, quantity || '', p.toFixed(2)].join('|').toLowerCase();
         if (seen[key]) return;
         seen[key] = true;
-        brand = clean(brand);
         out.push({ name: name.slice(0, 160), price: Math.round(p * 100) / 100,
                    gtin: gtin ? String(gtin) : null, image: image ? String(image) : null,
                    brand: brand && brand.length <= 40 && brand.toLowerCase() !== name.toLowerCase() ? brand : null,
@@ -173,23 +181,27 @@ enum DriveCaptureParser {
       }
       var NAME = ['[class*="product-name" i]', '[class*="productname" i]', '[class*="product-title" i]',
                   '[class*="producttitle" i]', '[class*="product__title" i]', '[class*="product__name" i]',
-                  '[itemprop="name"]', 'h2', 'h3', 'h4', '[class*="title" i]',
+                  '[itemprop~="name"]', 'h2', 'h3', 'h4', '[class*="title" i]',
                   '[class*="name" i]:not([class*="brand" i])', 'a[title]', 'h1'];
       var PRICE = ['[class*="label--price" i]', '[class*="current-price" i]', '[class*="currentprice" i]',
                    '[class*="price__main" i]', '[class*="price-value" i]', '[class*="sale-price" i]',
                    '[class*="price" i]:not([class*="base" i]):not([class*="old" i]):not([class*="strike" i]):not([class*="unit" i]):not([class*="price-per" i])'];
       // Contenance : écrite sur la fiche ("250 g"), sinon déduite du prix au kilo ("KG = 9.40" pour 2,35 € -> 250 g).
       function quantityOf(tile, price) {
-        var unitBox = tile.querySelector('[class*="salesunit" i], [class*="sales-unit" i], [class*="quantity" i], [class*="packaging" i], [class*="weight" i]');
-        var m = /(\d+(?:[.,]\d+)?)\s*(kg|g|l|cl|ml)\b/i.exec(textOf(unitBox));
-        if (m) return m[1].replace(',', '.') + ' ' + m[2].toLowerCase();
+        var unitBoxes = tile.querySelectorAll('[class*="salesunit" i], [class*="sales-unit" i], [class*="quantity" i], ' +
+          '[class*="packaging" i], [class*="weight" i], [class*="attribute" i], [class*="contenance" i]');
+        for (var k = 0; k < unitBoxes.length; k++) {
+          var m = /(\d+(?:[.,]\d+)?)\s*(kg|g|l|cl|ml|pièces?|pcs|unités?)(?![a-zà-ÿ])/i.exec(textOf(unitBoxes[k]));
+          if (m) return m[1].replace(',', '.') + ' ' + m[2].toLowerCase();
+        }
         var baseBox = tile.querySelector('[class*="base-price" i], [class*="baseprice" i], [class*="unit-price" i], [class*="price-per" i]');
-        var t = textOf(baseBox);
-        var b = /\b(kg|l)\b[^0-9]{0,8}(\d{1,4})[,.](\d{2})/i.exec(t);
-        var unit, base;
+        var unit, base, b = null;
+        // Dans la case du prix au kilo : "KG = 9.40" ou "1 kg = 9,40 €".
+        if (baseBox) { b = /\b(kg|l)\b[^0-9]{0,8}(\d{1,4})[,.](\d{2})/i.exec(textOf(baseBox)); }
         if (b) { unit = b[1].toLowerCase(); base = parseFloat(b[2] + '.' + b[3]); }
         else {
-          b = /(\d{1,4})[,.](\d{2})\s?€?\s?\/\s?(kg|l)\b/i.exec(t);
+          // "9,40 €/kg", dans cette case ou n'importe où sur la fiche.
+          b = /(\d{1,4})[,.](\d{2})\s?€?\s?\/\s?(kg|l)\b/i.exec(baseBox ? textOf(baseBox) : textOf(tile));
           if (b) { unit = b[3].toLowerCase(); base = parseFloat(b[1] + '.' + b[2]); }
         }
         if (!(base > 0) || !(price > 0)) return null;
@@ -225,15 +237,21 @@ enum DriveCaptureParser {
       document.querySelectorAll('script[type="application/ld+json"]').forEach(function (s) {
         try { fromLD(JSON.parse(s.textContent)); } catch (e) {}
       });
+      // Microdonnées : itemprop peut contenir plusieurs mots ("name description" chez Auchan).
       document.querySelectorAll('[itemtype*="schema.org/Product"]').forEach(function (el) {
-        var n = el.querySelector('[itemprop="name"]');
-        var p = el.querySelector('[itemprop="price"]');
+        var n = el.querySelector('[itemprop~="name"]');
+        var p = el.querySelector('[itemprop~="price"]');
         var g = el.querySelector('[itemprop^="gtin"]');
+        var b = el.querySelector('[itemprop~="brand"]');
         var i = el.querySelector('img');
+        var priceText = p && (p.getAttribute('content') || p.textContent);
+        var value = priceText ? parseFloat(String(priceText).replace(/[^0-9,.]/g, '').replace(',', '.')) : null;
         add(n && (n.getAttribute('content') || n.textContent),
-            p && (p.getAttribute('content') || p.textContent),
+            priceText,
             g && (g.getAttribute('content') || g.textContent),
-            i ? (i.currentSrc || i.src) : null);
+            i ? (i.currentSrc || i.src) : null,
+            b && (b.getAttribute('content') || b.textContent),
+            value > 0 ? quantityOf(el, value) : null);
       });
       // Fiches produit (Aldi, et la plupart des sites) : une fiche = un seul nom de produit.
       function fromTiles(selector) {
@@ -248,13 +266,14 @@ enum DriveCaptureParser {
             for (var j = 0; j < boxes.length && price === null; j++) { price = priceIn(textOf(boxes[j])); }
           }
           if (price === null) return;
-          var brandBox = tile.querySelector('[class*="brand" i]');
+          var brandBox = tile.querySelector('[class*="brand" i], [itemprop~="brand"]');
           add(name, price, tile.getAttribute('data-gtin') || tile.getAttribute('data-ean'), imageOf(tile),
               textOf(brandBox), quantityOf(tile, price));
         });
       }
       if (out.length === 0) {
-        fromTiles('[class*="product-tile" i], [class*="producttile" i], [class*="product-card" i], [class*="productcard" i]');
+        fromTiles('[class*="product-tile" i], [class*="producttile" i], [class*="product-card" i], [class*="productcard" i], ' +
+                  '[class*="product-thumbnail" i], [class*="product-item" i], [class*="productitem" i], [class*="product-box" i]');
       }
       if (out.length === 0) {
         var cards = document.querySelectorAll('article, li, [class*="product" i], [data-testid*="product" i]');

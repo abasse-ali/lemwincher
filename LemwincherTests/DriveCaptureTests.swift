@@ -61,6 +61,32 @@ final class DriveCaptureTests: XCTestCase {
         XCTAssertEqual(items[3].product.normalizedAmount?.value ?? 0, 1.2, accuracy: 1e-9)
     }
 
+    func testSameNameDifferentPackStaysTwoProducts() {
+        // Auchan : même nom et même marque, boîtes de 12 et de 6.
+        let json = """
+        [
+          {"name": "Oeufs de poules élevées en plein air", "price": 3.19, "brand": "AUCHAN", "quantity": "12 pièces"},
+          {"name": "Oeufs de poules élevées en plein air", "price": 3.19, "brand": "AUCHAN", "quantity": "6 pièces"},
+          {"name": "Oeufs de poules élevées en plein air", "price": 3.19, "brand": "AUCHAN", "quantity": "6 pièces"}
+        ]
+        """
+        let items = DriveCaptureParser.parse(json)
+        XCTAssertEqual(items.map(\.quantity), ["12 pièces", "6 pièces"], "le doublon exact est retiré, pas l'autre boîte")
+        XCTAssertNotEqual(items[0].id, items[1].id)
+        XCTAssertNotEqual(items[0].product.code, items[1].product.code, "6 et 12 œufs : deux produits")
+        XCTAssertEqual(items[1].product.quantity, "6 pièces")
+        XCTAssertEqual(CapturedPrice(name: "Bananes", price: 1.99).product.code, Product.custom(named: "Bananes").code,
+                       "sans marque ni contenance : le produit sans code-barres habituel")
+    }
+
+    func testLeclercOpensLeclercDrive() throws {
+        let leclerc = try XCTUnwrap(DriveSite.all.first { $0.id == "leclerc" })
+        XCTAssertEqual(leclerc.url(for: "œufs")?.absoluteString, "https://www.leclercdrive.fr",
+                       "chaque drive a son adresse : on ouvre l'accueil pour choisir le sien")
+        XCTAssertTrue(leclerc.matches(Fixtures.store("NODE:4", name: "E.Leclerc Blagnac", brand: "E.Leclerc")))
+        XCTAssertTrue(leclerc.choosesStore)
+    }
+
     func testSentenceCase() {
         XCTAssertEqual(DriveCaptureParser.sentenceCase("CRÈME LÉGÈRE FOUETTÉE"), "Crème légère fouettée")
         XCTAssertEqual(DriveCaptureParser.sentenceCase("Beurre doux extra fin"), "Beurre doux extra fin")

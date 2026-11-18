@@ -35,6 +35,17 @@ struct DriveCaptureView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 siteBar
+                if site.choosesStore {
+                    // Drives (Leclerc, Carrefour, Auchan, Intermarché, U) : pas de prix tant qu'aucun magasin n'est choisi.
+                    Label("Choisissez d'abord votre magasin sur le site (une seule fois) : ses prix s'affichent ensuite.",
+                          systemImage: "storefront")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color(.secondarySystemBackground))
+                }
                 WebView(webView: webView)
                 if let message {
                     Text(message)
