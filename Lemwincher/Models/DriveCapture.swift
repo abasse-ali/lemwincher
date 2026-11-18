@@ -459,9 +459,19 @@ enum DriveCaptureParser {
     }
     """#
 
-    /// Lecture de la page telle qu'elle est affichée.
-    static let script = functions + "\nextract(document);\nreturn JSON.stringify(out);"
+    /// Lecture de la page telle qu'elle est affichée (expression : renvoie le texte JSON).
+    static let script = "(function () {\n" + functions + "\nextract(document);\nreturn JSON.stringify(out);\n})();"
 
     /// Lecture de tous les produits : « Voir plus » et pages suivantes (45 s au plus sur la page, puis 30 s de pages).
-    static let fullScript = functions + "\nreturn await captureAll(45000);"
+    /// Le résultat revient par message (« done ») ; `window.__lemwincherOut` garde ce qui est lu en cas d'arrêt.
+    static let fullScript = "(function () {\n" + functions + """
+
+        window.__lemwincherOut = out;
+        function done(json) {
+          try { window.webkit.messageHandlers.lemwincher.postMessage({ done: json }); } catch (e) {}
+        }
+        captureAll(45000).then(done, function () { done(JSON.stringify(out)); });
+        })();
+        true;
+        """
 }

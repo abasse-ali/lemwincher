@@ -140,9 +140,10 @@ final class DriveCaptureTests: XCTestCase {
     }
 
     func testCaptureScriptsReadEverything() {
-        XCTAssertTrue(DriveCaptureParser.fullScript.contains("captureAll"))
-        XCTAssertTrue(DriveCaptureParser.fullScript.hasSuffix("return await captureAll(45000);"))
-        XCTAssertTrue(DriveCaptureParser.script.hasSuffix("return JSON.stringify(out);"))
+        XCTAssertTrue(DriveCaptureParser.fullScript.contains("captureAll(45000).then(done"))
+        XCTAssertTrue(DriveCaptureParser.fullScript.contains("window.__lemwincherOut = out;"), "lu en cas d'arrêt")
+        XCTAssertTrue(DriveCaptureParser.fullScript.hasSuffix("true;"), "evaluateJavaScript renvoie une valeur simple")
+        XCTAssertTrue(DriveCaptureParser.script.hasSuffix("return JSON.stringify(out);\n})();"))
         XCTAssertTrue(DriveCaptureParser.functions.contains("loadMoreButton"), "« Voir plus »")
         XCTAssertTrue(DriveCaptureParser.functions.contains("nextPage"), "pages suivantes")
     }

@@ -20,14 +20,57 @@ final class CaptureSession: NSObject, ObservableObject, WKScriptMessageHandler {
         relay.target = self
     }
 
-    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let body = message.body as? [String: Any], let count = body["count"] as? Int else { return }
-        DispatchQueue.main.async { self.count = count }
+    /// Lecture en cours : identifiant (une réponse tardive d'une lecture précédente est ignorée) et suite.
+    private var token = 0
+    private var onDone: ((String) -> Void)?
+
+    /// Lance la lecture complète. Le script renvoie le résultat par message (« done ») :
+    /// `evaluateJavaScript` ne sait pas attendre une promesse, et `callAsyncJavaScript` a besoin d'une
+    /// bibliothèque Swift absente d'iOS 17 / 18 (l'app ne démarrait plus).
+    func start(script: String, completion: @escaping (String) -> Void) {
+        token += 1
+        let current = token
+        count = 0
+        running = true
+        onDone = { [weak self] json in
+            guard let self, self.token == current, self.running else { return }
+            self.running = false
+            completion(json)
+        }
+        webView.evaluateJavaScript(script) { [weak self] _, error in
+            if error != nil { self?.onDone?("[]") }
+        }
+        // Filet de sécurité : la page a pu changer pendant la lecture (le script ne répondrait jamais).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 100) { [weak self] in
+            guard let self, self.token == current, self.running else { return }
+            self.collectPartial()
+        }
     }
 
-    /// Arrête la lecture : le script rend ce qu'il a déjà lu.
+    /// Arrête la lecture : le script rend ce qu'il a déjà lu (sinon on le lui demande).
     func stop() {
         webView.evaluateJavaScript("window.__lemwincherStop = true;")
+        let current = token
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+            guard let self, self.token == current, self.running else { return }
+            self.collectPartial()
+        }
+    }
+
+    private func collectPartial() {
+        webView.evaluateJavaScript("JSON.stringify(window.__lemwincherOut || [])") { [weak self] result, _ in
+            self?.onDone?(result as? String ?? "[]")
+        }
+    }
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any] else { return }
+        if let count = body["count"] as? Int {
+            DispatchQueue.main.async { self.count = count }
+        }
+        if let json = body["done"] as? String {
+            DispatchQueue.main.async { self.onDone?(json) }
+        }
     }
 }
 
@@ -264,12 +307,7 @@ struct DriveCaptureView: View {
     /// Lit tous les produits : défile, « Voir plus », pages suivantes ; « Arrêter » rend ce qui est déjà lu.
     private func capture() {
         message = nil
-        session.count = 0
-        session.running = true
-        session.webView.callAsyncJavaScript(DriveCaptureParser.fullScript, arguments: [:], in: nil,
-                                            in: .page) { result in
-            session.running = false
-            let json = (try? result.get()) as? String ?? "[]"
+        session.start(script: DriveCaptureParser.fullScript) { json in
             let found = DriveCaptureParser.parse(json)
             if found.isEmpty {
                 message = "Aucun prix lisible sur cette page. Ouvrez un rayon ou une recherche (choisissez votre magasin si le site le demande), puis réessayez."
