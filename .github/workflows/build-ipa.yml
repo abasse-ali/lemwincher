@@ -11,7 +11,8 @@ jobs:
     # Mac Intel : les Mac Apple Silicon (macos-latest) de GitHub étaient saturés en novembre 2026.
     # Si ce Mac Intel est un jour retiré par GitHub, remplacer par macos-latest.
     runs-on: macos-15-intel
-    timeout-minutes: 50
+    # Compilation (~10 min) + tests unitaires + parcours d'interface (~20 min) + IPA (~5 min) : marge pour les Mac lents.
+    timeout-minutes: 90
     steps:
       - name: Récupérer le code
         uses: actions/checkout@v4
@@ -66,7 +67,7 @@ jobs:
       - name: Tests d'interface et captures d'écran
         id: uitests
         continue-on-error: true
-        timeout-minutes: 20
+        timeout-minutes: 35
         run: |
           set -o pipefail
           xcodebuild test-without-building \
