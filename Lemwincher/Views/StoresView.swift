@@ -54,12 +54,24 @@ struct StoresView: View {
                 Marker("Domicile", systemImage: "house.fill", coordinate: home.coordinate)
                     .tint(Color.blue)
             }
-            ForEach(model.visibleStores) { store in
+            ForEach(mapStores) { store in
                 Marker(store.name, systemImage: "cart.fill", coordinate: store.coordinate)
                     .tint(markerColor(for: store))
             }
         }
         .frame(height: 230)
+    }
+
+    /// Sur la carte : les 80 magasins les plus proches et les favoris (la liste, elle, est complète).
+    /// Des centaines d'épingles superposées seraient illisibles et lentes à afficher.
+    private var mapStores: [Store] {
+        let visible = model.visibleStores
+        var shown = Array(visible.prefix(80))
+        let shownIDs = Set(shown.map(\.id))
+        for store in model.settings.favoriteStores where !shownIDs.contains(store.id) {
+            shown.append(store)
+        }
+        return shown
     }
 
     private func markerColor(for store: Store) -> Color {
