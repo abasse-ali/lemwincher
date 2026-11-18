@@ -26,6 +26,11 @@ enum Fmt {
         value.formatted(.currency(code: currency).locale(french))
     }
 
+    /// « 1,5 », « 33 », « 0,25 » (2 décimales au plus).
+    static func decimal(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0...2)).grouping(.never).locale(french))
+    }
+
     static func distance(_ meters: Double) -> String {
         if meters < 1000 {
             return "\(Int((meters / 10).rounded()) * 10) m"
@@ -96,6 +101,9 @@ extension View {
             }
             .navigationDestination(for: TrackedPageRoute.self) { route in
                 TrackedPageView(pageID: route.id)
+            }
+            .navigationDestination(for: ValueCompareRoute.self) { route in
+                ValueCompareView(initialQuery: route.query)
             }
     }
 }

@@ -366,7 +366,12 @@ struct DriveCaptureView: View {
             let found = DriveCaptureParser.parse(json)
             if found.isEmpty {
                 message = "Aucun prix lisible sur cette page. Ouvrez un rayon ou une recherche (choisissez votre magasin si le site le demande), puis réessayez."
+                Log.warning(.sites, "Site \(site.name) : aucun prix lisible sur la page",
+                            details: Fmt.join(session.webView.title, Log.describe(session.webView.url))
+                                + "\nRéponse du script : \(String(json.prefix(200)))")
             } else {
+                Log.info(.sites, "Site \(site.name) : \(found.count) prix lus",
+                         details: Log.describe(session.webView.url))
                 review = CaptureBatch(items: found, site: site, store: store,
                                       pageURL: session.webView.url, pageTitle: session.webView.title)
             }

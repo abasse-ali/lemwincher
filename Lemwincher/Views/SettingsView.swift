@@ -125,6 +125,20 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    NavigationLink {
+                        LogView()
+                    } label: {
+                        Label("Journal de l'app", systemImage: "list.bullet.rectangle.portrait")
+                    }
+                    .badge(AppLog.shared.recentProblems())
+                    .accessibilityIdentifier("logLink")
+                } header: {
+                    Text("Assistance")
+                } footer: {
+                    Text("Tout ce qui se passe dans l'app : réussites, alertes et erreurs (réseau, sites des enseignes, prix, magasins…). La pastille compte les problèmes des dernières 24 h. Partagez le journal pour montrer un problème.")
+                }
+
+                Section {
                     Button {
                         model.state.settings.hasSeenOnboarding = false
                     } label: {
@@ -333,6 +347,7 @@ struct SettingsView: View {
         switch result {
         case .failure(let error):
             importMessage = "Import impossible : \(error.localizedDescription)"
+            Log.error(.backup, "Restauration impossible", details: error.localizedDescription)
         case .success(let url):
             let accessing = url.startAccessingSecurityScopedResource()
             defer {
@@ -342,8 +357,10 @@ struct SettingsView: View {
                 let data = try Data(contentsOf: url)
                 let summary = try model.importBackup(data)
                 importMessage = summary.text
+                Log.success(.backup, "Sauvegarde restaurée", details: summary.text)
             } catch {
                 importMessage = "Ce fichier n'est pas une sauvegarde Lemwincher valide."
+                Log.error(.backup, "Fichier de sauvegarde non valide", details: error.localizedDescription)
             }
         }
     }

@@ -208,6 +208,14 @@ struct ShoppingListView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
+                        Picker(selection: $bindable.state.settings.suggestionSort) {
+                            ForEach(SuggestionSort.allCases) { sort in
+                                Text(sort.label).tag(sort)
+                            }
+                        } label: {
+                            Label("Trier les produits proposés", systemImage: "arrow.up.arrow.down")
+                        }
+                        .pickerStyle(.menu)
                         Button {
                             showShoppingDone = true
                         } label: {
@@ -638,10 +646,27 @@ struct ProductChoicesView: View {
     private var query: String { item.product.name }
 
     var body: some View {
+        @Bindable var bindable = model
         let results = model.suggestionResults(for: query)
-        let items = SuggestionEngine.merge(personal: model.personalSuggestions(for: query), remote: results.items)
+        let merged = SuggestionEngine.merge(personal: model.personalSuggestions(for: query), remote: results.items)
             .filter { model.dietAllows($0.product) }
+        // Par prix, ou du meilleur rapport quantité/prix au moins bon (au kilo, sinon à la pièce).
+        let byValue = model.settings.suggestionSort == .value
+        let items = byValue ? SuggestionEngine.sortedByValue(merged) : merged
+        let basis = byValue ? SuggestionEngine.valueBasis(merged) : nil
         Group {
+            if merged.filter({ $0.offer != nil }).count >= 2 {
+                Picker(selection: $bindable.state.settings.suggestionSort) {
+                    ForEach(SuggestionSort.allCases) { sort in
+                        Text(sort.label).tag(sort)
+                    }
+                } label: {
+                    Label(basis.map { "Trier (\($0.phrase))" } ?? "Trier", systemImage: "arrow.up.arrow.down")
+                        .font(.subheadline)
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("suggestionSort")
+            }
             if let choice = item.choice {
                 Button {
                     model.choose(nil, for: item.id)
@@ -683,6 +708,7 @@ struct ProductChoicesView: View {
             ForEach(items) { suggestion in
                 SuggestionRow(suggestion: suggestion,
                               chosen: item.choice?.code == suggestion.product.code,
+                              valueBasis: basis,
                               onChoose: {
                                   let same = item.choice?.code == suggestion.product.code
                                   model.choose(same ? nil : suggestion.product, for: item.id)
@@ -724,8 +750,29 @@ struct ProductChoicesView: View {
 struct SuggestionRow: View {
     let suggestion: ProductSuggestion
     let chosen: Bool
+    /// Tri « Rapport quantité/prix » : l'unité comparée (son prix est mis en avant).
+    var valueBasis: ValueBasis? = nil
     let onChoose: () -> Void
     let onOpen: () -> Void
+
+    private struct UnitLine: Hashable {
+        let text: String
+        let highlighted: Bool
+    }
+
+    /// « 7,99 €/kg », « 0,80 € la pièce » : celui du tri en premier.
+    private var unitLines: [UnitLine] {
+        guard let offer = suggestion.offer else { return [] }
+        let item = ValueItem(id: suggestion.id, product: suggestion.product, price: offer.price, currency: offer.currency)
+        var lines: [UnitLine] = []
+        for basis in ValueBasis.allCases {
+            guard let unit = item.unitPrice(basis) else { continue }
+            if basis == .piece && (item.pack.count ?? 0) < 2 { continue }
+            lines.append(UnitLine(text: ValueCompare.unitPriceText(unit, basis: basis, currency: offer.currency),
+                                  highlighted: basis == valueBasis))
+        }
+        return lines.sorted { $0.highlighted && !$1.highlighted }
+    }
 
     /// Où et quand ce prix a été relevé : "Lidl Minimes · 1,2 km · 12 nov." / "relevé chez E.Leclerc Rouen · hier".
     private var placeText: String? {
@@ -787,10 +834,10 @@ struct SuggestionRow: View {
                 Text(Fmt.price(offer.price, offer.currency))
                     .font(.subheadline.bold().monospacedDigit())
                     .foregroundStyle(offer.isLocal ? Color.brand : Color.primary)
-                if let unit = suggestion.product.normalizedAmount {
-                    Text(unit.unitPriceText(offer.price, currency: offer.currency))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                ForEach(unitLines, id: \.self) { line in
+                    Text(line.text)
+                        .font(line.highlighted ? Font.caption2.bold() : Font.caption2)
+                        .foregroundStyle(line.highlighted ? Color.brand : Color.secondary)
                 }
             }
         } else if let grade = suggestion.nutriScore {

@@ -7,6 +7,8 @@ struct LemwincherApp: App {
 
     init() {
         Notifier.showWhileOpen()
+        Log.info(.app, "Ouverture de Lemwincher \(AppLog.appVersion)",
+                 details: "iOS \(AppLog.systemVersion) · \(AppLog.deviceModel)")
     }
 
     var body: some Scene {

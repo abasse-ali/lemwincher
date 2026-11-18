@@ -72,9 +72,11 @@ final class OpenPricesAccount {
             UserDefaults.standard.set(user, forKey: OpenPricesAccount.usernameKey)
             token = session.accessToken
             self.username = user
+            Log.success(.account, "Connecté à Open Prices")
             return true
         } catch {
             lastError = "Connexion impossible : \(error.localizedDescription)"
+            Log.error(.account, "Connexion à Open Prices impossible", details: error.localizedDescription)
             return false
         }
     }

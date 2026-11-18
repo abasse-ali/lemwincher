@@ -98,6 +98,18 @@ struct ProductCompareView: View {
 
             localSection(rows: rows)
 
+            let similar = ValueCompare.genericQuery(for: product.name)
+            if !similar.isEmpty {
+                Section {
+                    NavigationLink(value: ValueCompareRoute(query: similar)) {
+                        Label("Comparer avec des produits similaires", systemImage: "scalemass")
+                    }
+                    .accessibilityIdentifier("compareSimilar")
+                } footer: {
+                    Text("Quel « \(similar) » revient le moins cher au kilo, au litre ou à la pièce ?")
+                }
+            }
+
             Section {
                 Button {
                     showDriveCapture = true

@@ -65,6 +65,28 @@ final class LemwincherUITests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
+    /// « Comparer » : note un produit vu en magasin (nom et prix).
+    private func addCompareEntry(_ app: XCUIApplication, name: String, price: String, shot: String? = nil) {
+        let add = element(app, "compareAddManual")
+        guard add.waitForExistence(timeout: 5) else { return }
+        if !add.isHittable { app.swipeUp() }
+        add.tap()
+        let nameField = app.textFields["compareName"]
+        guard nameField.waitForExistence(timeout: 5) else { return }
+        nameField.tap()
+        nameField.typeText(name)
+        let priceField = app.textFields["comparePrice"]
+        if priceField.exists {
+            priceField.tap()
+            priceField.typeText(price)
+        }
+        sleep(1)
+        if let shot { snapshot(shot) }
+        let save = element(app, "compareSave")
+        if save.exists && save.isEnabled { save.tap() }
+        sleep(1)
+    }
+
     private func goBack(_ app: XCUIApplication) {
         let back = app.navigationBars.buttons.firstMatch
         if back.exists { back.tap() }
@@ -270,6 +292,28 @@ final class LemwincherUITests: XCTestCase {
             sleep(1)
         }
 
+        // Comparer le rapport quantité/prix : 10 steaks à 7,99 € ou 2 steaks à 3,99 € ?
+        let compare = element(app, "compareLink")
+        scrollDown(until: compare, in: app)
+        if compare.waitForExistence(timeout: 5) && compare.isHittable {
+            compare.tap()
+            sleep(2)
+            addCompareEntry(app, name: "10 steaks hachés surgelés", price: "7.99", shot: "12d-comparer-saisie")
+            addCompareEntry(app, name: "2 steaks hachés", price: "3.99")
+            sleep(1)
+            snapshot("12e-comparer-steaks")
+            let compareQuery = app.textFields["compareQuery"]
+            if compareQuery.waitForExistence(timeout: 3) {
+                compareQuery.tap()
+                compareQuery.typeText("lait\n")
+                sleep(15)
+                snapshot("12f-comparer-lait")
+            }
+            goBack(app)
+        } else {
+            dump(app, "12d-comparer-introuvable")
+        }
+
         // 3. Ma liste : ajout rapide et magasin le moins cher.
         tab(app, "Ma liste")
         let field = app.textFields["quickAddField"]
@@ -289,6 +333,19 @@ final class LemwincherUITests: XCTestCase {
             // on attend, on photographie, puis on cherche un produit avec une requête ciblée.
             sleep(25)
             snapshot("13b-liste-oeufs-deplies")
+            // Trier les produits proposés par rapport quantité/prix (œufs : à la pièce).
+            let sort = element(app, "suggestionSort")
+            if sort.exists && sort.isHittable {
+                sort.tap()
+                let option = app.buttons["Rapport quantité/prix"].firstMatch
+                if option.waitForExistence(timeout: 3) {
+                    option.tap()
+                    sleep(2)
+                    snapshot("13b2-liste-tri-quantite-prix")
+                } else {
+                    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
+                }
+            }
             let first = app.buttons.matching(identifier: "suggestion").firstMatch
             if first.waitForExistence(timeout: 10) && first.isHittable {
                 first.tap()
@@ -370,6 +427,14 @@ final class LemwincherUITests: XCTestCase {
             for _ in 0..<6 { app.swipeUp(velocity: .fast) }
             sleep(1)
             snapshot("18c-reglages-a-propos")
+            // Journal de l'app : ce qui s'est passé pendant ce parcours.
+            let logLink = element(app, "logLink")
+            if logLink.exists && logLink.isHittable {
+                logLink.tap()
+                sleep(2)
+                snapshot("18d-journal")
+                goBack(app)
+            }
             let close = element(app, "closeSettings")
             if close.waitForExistence(timeout: 3) { close.tap() }
             sleep(1)

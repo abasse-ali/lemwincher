@@ -148,6 +148,25 @@ struct SearchView: View {
         }
 
         Section {
+            NavigationLink(value: ValueCompareRoute()) {
+                HStack(spacing: 12) {
+                    Image(systemName: "scalemass.fill")
+                        .font(.title3)
+                        .foregroundStyle(Color.white)
+                        .frame(width: 40, height: 40)
+                        .background(Color.brand.gradient, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Comparer des produits").font(.headline)
+                        Text("Le plus avantageux au kilo, au litre ou à la pièce : 10 steaks à 7,99 € ou 2 à 3,99 € ?")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .accessibilityIdentifier("compareLink")
+        }
+
+        Section {
             RayonGrid { rayon in
                 path.append(rayon)
             }

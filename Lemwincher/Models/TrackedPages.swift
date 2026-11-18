@@ -139,6 +139,25 @@ enum CaptureUpdater {
         return (result, updates)
     }
 
+    /// « 3 nouveaux, 2 baisses, 20 inchangés » (journal de l'app).
+    static func changesText(_ updates: [PriceUpdate]) -> String {
+        func plural(_ count: Int, _ singular: String, _ plural: String) -> String {
+            "\(count) \(count > 1 ? plural : singular)"
+        }
+        let new = updates.filter { $0.kind == .new }.count
+        let drops = updates.filter(\.isDrop).count
+        let rises = updates.filter(\.isRise).count
+        let unchanged = updates.filter { $0.kind == .unchanged }.count
+        let promos = updates.count - new - drops - rises - unchanged
+        var parts: [String] = []
+        if new > 0 { parts.append(plural(new, "nouveau", "nouveaux")) }
+        if drops > 0 { parts.append(plural(drops, "baisse", "baisses")) }
+        if rises > 0 { parts.append(plural(rises, "hausse", "hausses")) }
+        if promos > 0 { parts.append(plural(promos, "promo changée", "promos changées")) }
+        if unchanged > 0 { parts.append(plural(unchanged, "inchangé", "inchangés")) }
+        return parts.isEmpty ? "aucun prix" : parts.joined(separator: ", ")
+    }
+
     /// « 2 baisses : Beurre doux 2,19 € (au lieu de 2,35 €)… » pour la notification.
     static func dropsSummary(_ updates: [PriceUpdate], currency: String, storeName: String) -> String? {
         let drops = updates.filter(\.isDrop)

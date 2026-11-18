@@ -44,15 +44,50 @@ enum HTTP {
     }
 
     static func send<T: Decodable>(_ request: URLRequest, snakeCase: Bool) async throws -> T {
-        let (data, response) = try await session.data(for: request)
+        // Journal : adresse sans ses paramètres (ni position ni recherche).
+        let place = Log.describe(request.url)
+        let started = Date()
+        let host = request.url?.host ?? "Serveur"
+        let result: (Data, URLResponse)
+        do {
+            result = try await session.data(for: request)
+        } catch {
+            if !error.isCancellation {
+                Log.warning(.network, "\(host) injoignable : \(error.localizedDescription)",
+                            details: "\(request.httpMethod ?? "GET") \(place) après \(elapsed(since: started))")
+            }
+            throw error
+        }
+        let (data, response) = result
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw APIError.status(http.statusCode, errorDetail(from: data))
+            let detail = errorDetail(from: data)
+            let details = Fmt.join("\(request.httpMethod ?? "GET") \(place)", detail.map { String($0.prefix(300)) })
+            switch http.statusCode {
+            case 404:
+                // Produit absent d'une base (Open Food Facts…) : normal, pas une panne.
+                Log.info(.network, "\(host) : introuvable (404)", details: details)
+            case 400..<500:
+                Log.warning(.network, "\(host) : requête refusée (\(http.statusCode))", details: details)
+            default:
+                Log.error(.network, "\(host) : erreur \(http.statusCode)", details: details)
+            }
+            throw APIError.status(http.statusCode, detail)
         }
         let decoder = JSONDecoder()
         if snakeCase {
             decoder.keyDecodingStrategy = .convertFromSnakeCase
         }
-        return try decoder.decode(T.self, from: data)
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            Log.error(.network, "\(host) : réponse illisible",
+                      details: "\(place)\n\(String(String(describing: error).prefix(400)))")
+            throw error
+        }
+    }
+
+    private static func elapsed(since start: Date) -> String {
+        String(format: "%.1f s", Date().timeIntervalSince(start)).replacingOccurrences(of: ".", with: ",")
     }
 
     /// Message d'erreur lisible renvoyé par l'API ({"detail": "..."}).

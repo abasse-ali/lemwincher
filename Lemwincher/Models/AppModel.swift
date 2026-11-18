@@ -154,6 +154,12 @@ final class AppModel {
         if let code = result.countryCode { detectedCountry = code }
         if stores.isEmpty {
             storesError = "Aucun magasin trouvé à moins de \(Int(radius)) km. Vérifiez votre connexion ou augmentez le rayon dans Réglages."
+            Log.error(.stores, "Aucun magasin trouvé à moins de \(Int(radius)) km", details: "Source : \(result.source)")
+        } else if result.complete {
+            Log.success(.stores, "\(stores.count) magasins à moins de \(Int(radius)) km", details: "Source : \(result.source)")
+        } else {
+            Log.warning(.stores, "\(stores.count) magasins : liste partielle (OpenStreetMap ne répond pas)",
+                        details: "Source : \(storesSource ?? result.source)")
         }
         storesLoading = false
     }
@@ -256,9 +262,11 @@ final class AppModel {
             let report = try await ChainIndexBuilder.build(country: country, currency: currency)
             chainIndex = report
             if !isUITest { AppModel.saveChainIndex(report) }
+            Log.success(.prices, "Classement des enseignes calculé : \(report.entries.count) enseignes, \(report.productCount) produits")
         } catch {
             if !error.isCancellation {
                 chainIndexError = "Classement indisponible : \(error.localizedDescription)"
+                Log.error(.prices, "Classement des enseignes indisponible", details: error.localizedDescription)
             }
         }
         chainIndexLoading = false
@@ -286,6 +294,7 @@ final class AppModel {
             fuelUpdated = Date()
             fuelLoadedKey = key
             fuelLoading = false
+            Log.success(.fuel, "\(stations.count) stations-service à moins de \(Int(radius)) km")
             // Noms des stations (OpenStreetMap), quand le serveur répond.
             if let places = await StoreFinder.fuelPlaces(lat: lat, lon: lon, radiusKm: radius), key == locationKey {
                 fuelStations = FuelStats.label(stations, places: places, stores: stores)
@@ -293,6 +302,7 @@ final class AppModel {
         } catch {
             if !error.isCancellation {
                 fuelError = "Prix des carburants indisponibles : \(error.localizedDescription)"
+                Log.error(.fuel, "Prix des carburants indisponibles", details: error.localizedDescription)
             }
             fuelLoading = false
         }
@@ -322,9 +332,11 @@ final class AppModel {
         do {
             localRecalls = try await GovDataAPI.recentRecalls(department: departmentName, days: 30)
             recallsLoadedKey = key
+            Log.success(.recalls, "\(localRecalls.count) rappels de produits ces 30 jours (\(departmentName ?? "France"))")
         } catch {
             if !error.isCancellation {
                 recallsError = "Rappels indisponibles : \(error.localizedDescription)"
+                Log.error(.recalls, "Rappels indisponibles", details: error.localizedDescription)
             }
         }
         recallsLoading = false
@@ -337,6 +349,12 @@ final class AppModel {
         guard !pending.isEmpty else { return }
         guard let recalls = try? await GovDataAPI.recalls(forBarcodes: pending) else { return }
         for code in pending { checkedRecallCodes.insert(code) }
+        let active = recalls.filter { $0.isActive() }
+        if active.isEmpty {
+            Log.info(.recalls, "\(pending.count) produit\(pending.count > 1 ? "s" : "") vérifié\(pending.count > 1 ? "s" : "") : aucun rappel en cours")
+        } else {
+            Log.warning(.recalls, "Rappel en cours : " + active.prefix(3).map(\.title).joined(separator: ", "))
+        }
         for recall in recalls where recall.isActive() {
             guard let gtin = recall.gtin else { continue }
             if let existing = recallsByGTIN[gtin], (existing.published ?? .distantPast) > (recall.published ?? .distantPast) {
@@ -429,11 +447,13 @@ final class AppModel {
             }
             if let alert = outcome.alert {
                 drops += 1
+                Log.success(.prices, alert)
                 if notify {
                     Notifier.notify(title: "Baisse de prix", body: alert, id: "suivi-\(item.id)")
                 }
             }
         }
+        Log.info(.prices, "\(state.watchlist.count) prix suivi\(state.watchlist.count > 1 ? "s" : "") vérifié\(state.watchlist.count > 1 ? "s" : "") : \(drops) baisse\(drops > 1 ? "s" : "")")
         return drops
     }
 
@@ -449,6 +469,9 @@ final class AppModel {
     func addExpense(_ expense: Expense) {
         let before = budgetSummary
         state.expenses.append(expense)
+        Log.success(.budget, "Dépense ajoutée : \(Fmt.price(expense.amount, state.settings.currency))"
+                    + (expense.storeName.map { " chez \($0)" } ?? ""),
+                    details: expense.note)
         // Autorisation des notifications demandée une seule fois par iOS (alertes de budget).
         if state.settings.budgetAlerts && !isUITest {
             Task { await Notifier.requestPermission() }
@@ -462,6 +485,7 @@ final class AppModel {
             ? "Budget du mois dépassé : \(Fmt.price(after.spent, currency)) dépensés sur \(Fmt.price(after.budget, currency))."
             : "80 % du budget atteint : il reste \(Fmt.price(after.remaining, currency)) pour \(after.daysLeft) jour\(after.daysLeft > 1 ? "s" : "")."
         budgetAlert = message
+        Log.warning(.budget, message)
         if state.settings.budgetAlerts && !isUITest {
             Notifier.notify(title: "Budget courses", body: message, id: "budget-\(threshold)")
         }
@@ -528,7 +552,10 @@ final class AppModel {
     func checkListItem(_ id: UUID, amount: Double?, storeName: String?, store: Store?) {
         guard let index = state.shoppingList.firstIndex(where: { $0.id == id }) else { return }
         state.shoppingList[index].checked = true
-        guard let amount, amount > 0 else { return }
+        guard let amount, amount > 0 else {
+            Log.info(.list, "« \(state.shoppingList[index].pricedProduct.name) » coché, sans dépense")
+            return
+        }
         let expense = BudgetEngine.purchase(of: state.shoppingList[index], amount: amount,
                                             storeName: storeName, store: store)
         state.shoppingList[index].expenseID = expense.id
@@ -602,6 +629,12 @@ final class AppModel {
             let priced = await SuggestionService.pricedSuggestions(for: query, context: context)
             results.items = priced.items
             results.pricesUnavailable = priced.failed
+            if priced.failed {
+                Log.warning(.prices, "Prix indisponibles pour « \(query) » : Open Prices ne répond pas")
+            } else {
+                let withPrice = priced.items.filter { $0.offer != nil }.count
+                Log.info(.products, "« \(query) » : \(withPrice) produit\(withPrice > 1 ? "s" : "") avec un prix relevé")
+            }
         }
         let catalogText = SuggestionEngine.catalogText(query)
         if !catalogText.isEmpty,
@@ -687,6 +720,8 @@ final class AppModel {
         for update in result.updates where update.kind != .unchanged {
             remember(update.product)
         }
+        Log.success(.sites, "Site \(site.name) : \(result.updates.count) prix enregistrés pour \(store.name)",
+                    details: CaptureUpdater.changesText(result.updates) + (pageURL.map { "\n" + Log.describe($0) } ?? ""))
         guard track, let pageURL, pageURL.scheme?.hasPrefix("http") == true else { return result.updates }
         let codes = result.updates.map(\.product.code)
         if let index = state.trackedPages.firstIndex(where: { $0.url == pageURL.absoluteString && $0.store.id == store.id }) {
@@ -731,6 +766,8 @@ final class AppModel {
             state.trackedPages[index].lastChecked = Date()
             guard !items.isEmpty else {
                 state.trackedPages[index].lastError = "Aucun prix lu : la page a peut-être changé, ou le site demande de choisir le magasin."
+                Log.warning(.tracked, "Rayon « \(page.shortTitle) » (\(page.siteName)) : aucun prix lu",
+                            details: Log.describe(url))
                 continue
             }
             let result = CaptureUpdater.apply(items, to: state.myPrices, store: page.store, currency: currency,
@@ -740,6 +777,8 @@ final class AppModel {
             state.trackedPages[index].productCodes = Array(Set(state.trackedPages[index].productCodes + codes)).sorted()
             state.trackedPages[index].lastChanges = result.updates.filter { $0.kind != .unchanged }.count
             state.trackedPages[index].lastError = nil
+            Log.success(.tracked, "Rayon « \(page.shortTitle) » (\(page.siteName)) mis à jour : \(items.count) prix",
+                        details: CaptureUpdater.changesText(result.updates))
             if !isUITest,
                let summary = CaptureUpdater.dropsSummary(result.updates, currency: currency, storeName: page.store.name) {
                 Notifier.notify(title: "Baisse de prix · \(page.shortTitle)", body: summary, id: "rayon-\(page.id.uuidString)")
@@ -869,12 +908,13 @@ final class AppModel {
             let data = try JSONEncoder().encode(state)
             try data.write(to: AppModel.fileURL, options: .atomic)
         } catch {
-            print("Lemwincher: sauvegarde impossible – \(error)")
+            Log.error(.app, "Enregistrement des données impossible", details: error.localizedDescription)
         }
     }
 
     func resetAll() {
         state = PersistedState()
         state.settings.hasSeenOnboarding = true
+        Log.warning(.app, "Toutes les données ont été effacées (Réglages)")
     }
 }

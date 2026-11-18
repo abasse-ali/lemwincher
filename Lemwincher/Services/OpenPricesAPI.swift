@@ -715,16 +715,21 @@ enum ProductLookup {
     /// Open Prices, Open Food Facts, puis les bases sœurs (cosmétiques, animaux, autres produits).
     static func lookup(code: String) async -> Product? {
         if let p = try? await OpenPricesAPI.product(code: code), p.productName?.nilIfBlank != nil {
-            return p.asProduct(code: code)
+            let product = p.asProduct(code: code)
+            Log.success(.products, "Fiche trouvée : \(product.name)", details: "\(code) · Open Prices")
+            return product
         }
         if let found = try? await OpenFoodFactsAPI.product(code: code) {
+            Log.success(.products, "Fiche trouvée : \(found.name)", details: "\(code) · Open Food Facts")
             return found
         }
         for host in OpenFoodFactsAPI.sisterHosts {
             if let found = try? await OpenFoodFactsAPI.product(code: code, host: host) {
+                Log.success(.products, "Fiche trouvée : \(found.name)", details: "\(code) · \(host)")
                 return found
             }
         }
+        Log.warning(.products, "Produit inconnu des bases Open Food Facts : \(code)")
         return nil
     }
 }

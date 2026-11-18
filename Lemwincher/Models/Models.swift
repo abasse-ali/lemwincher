@@ -179,6 +179,14 @@ struct UnitAmount: Hashable {
         options: [.caseInsensitive]
     )
 
+    /// « 1 kg », « 250 g », « 1,5 L », « 33 cl ».
+    var text: String {
+        if unit == "kg" {
+            return value < 1 ? "\(Int((value * 1000).rounded())) g" : "\(Fmt.decimal(value)) kg"
+        }
+        return value < 1 ? "\(Fmt.decimal(value * 100)) cl" : "\(Fmt.decimal(value)) L"
+    }
+
     func unitPrice(_ price: Double) -> Double { price / value }
 
     func unitPriceText(_ price: Double, currency: String) -> String {
@@ -283,6 +291,8 @@ struct AppSettings: Codable, Hashable {
     var readStepsAloud: Bool = false
     /// Clair, sombre, ou comme l'iPhone.
     var appearance: AppAppearance = .system
+    /// Ordre des produits proposés sous un article de « Ma liste ».
+    var suggestionSort: SuggestionSort = .price
 
     static let currencies = ["EUR", "KMF", "XOF", "XAF", "MGA", "MUR", "MAD", "DZD", "TND", "CHF", "GBP", "USD", "CAD"]
 
@@ -315,6 +325,7 @@ struct AppSettings: Codable, Hashable {
         defaultServings = min(max((try? c.decode(Int.self, forKey: .defaultServings)) ?? 1, 1), 12)
         readStepsAloud = (try? c.decode(Bool.self, forKey: .readStepsAloud)) ?? false
         appearance = (try? c.decode(AppAppearance.self, forKey: .appearance)) ?? .system
+        suggestionSort = (try? c.decode(SuggestionSort.self, forKey: .suggestionSort)) ?? .price
     }
 }
 
@@ -347,6 +358,8 @@ struct PersistedState: Codable, Equatable {
     var weekMenu: [String] = []
     /// Rayons des sites d'enseignes gardés en mémoire, relus automatiquement.
     var trackedPages: [TrackedPage] = []
+    /// Produits notés à la main dans « Comparer » (vus en magasin).
+    var compareEntries: [ManualCompareEntry] = []
 
     init() {}
 
@@ -361,6 +374,7 @@ struct PersistedState: Codable, Equatable {
         favoriteRecipes = (try? c.decode([String].self, forKey: .favoriteRecipes)) ?? []
         weekMenu = (try? c.decode([String].self, forKey: .weekMenu)) ?? []
         trackedPages = ((try? c.decode([Lossy<TrackedPage>].self, forKey: .trackedPages)) ?? []).compactMap(\.value)
+        compareEntries = ((try? c.decode([Lossy<ManualCompareEntry>].self, forKey: .compareEntries)) ?? []).compactMap(\.value)
     }
 }
 

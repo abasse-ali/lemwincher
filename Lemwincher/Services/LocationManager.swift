@@ -51,5 +51,6 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         lastError = error.localizedDescription
+        Log.warning(.location, "Position introuvable : \(error.localizedDescription)")
     }
 }
