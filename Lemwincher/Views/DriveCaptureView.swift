@@ -247,9 +247,21 @@ struct CaptureReviewView: View {
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            Text(Fmt.price(item.price, model.settings.currency))
-                                .font(.subheadline.bold().monospacedDigit())
-                                .fixedSize()
+                            VStack(alignment: .trailing, spacing: 2) {
+                                if item.promo {
+                                    PromoBadge()
+                                }
+                                Text(Fmt.price(item.price, model.settings.currency))
+                                    .font(.subheadline.bold().monospacedDigit())
+                                    .foregroundStyle(item.promo ? Color.pink : Color.primary)
+                                if let old = item.oldPrice {
+                                    Text(Fmt.price(old, model.settings.currency))
+                                        .font(.caption2.monospacedDigit())
+                                        .strikethrough()
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .fixedSize()
                         }
                     }
                 } header: {
@@ -283,6 +295,7 @@ struct CaptureReviewView: View {
             var entry = MyPrice(product: item.product, store: store, price: item.price,
                                 currency: model.settings.currency, date: Date())
             entry.source = "site \(site.name)"
+            entry.isDiscounted = item.promo
             model.addMyPrice(entry)
         }
         dismiss()

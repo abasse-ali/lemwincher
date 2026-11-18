@@ -251,6 +251,63 @@ final class DishComposerTests: XCTestCase {
     }
 }
 
+final class AdditivesAndPromotionsTests: XCTestCase {
+    func testAdditiveCodesAndNames() {
+        XCTAssertEqual(Additives.code(fromTag: "en:e322i"), "E322i")
+        XCTAssertEqual(Additives.code(fromTag: "en:e1105"), "E1105")
+        XCTAssertNil(Additives.code(fromTag: "en:sugar"))
+        XCTAssertEqual(Additives.baseCode("E472e"), "E472")
+        XCTAssertTrue(Additives.isPossiblyAnimal("E471"))
+        XCTAssertTrue(Additives.isPossiblyAnimal("E472e"))
+        XCTAssertFalse(Additives.isPossiblyAnimal("E330"))
+        XCTAssertEqual(Additives.label("E330"), "E330 (acide citrique)")
+        XCTAssertEqual(Additives.label("E322i"), "E322i (lécithines)")
+        XCTAssertEqual(Additives.label("E999"), "E999")
+    }
+
+    func testPromotionsFromRealReadings() {
+        let now = Fixtures.day(40)
+        let observations = [
+            Fixtures.obs(3.29, store: "NODE:1", date: Fixtures.day(30)),
+            Fixtures.obs(2.49, store: "NODE:1", date: Fixtures.day(38), discounted: true),
+            Fixtures.obs(1.99, store: "NODE:2", date: Fixtures.day(39), discounted: true),
+            Fixtures.obs(1.50, store: "NODE:3", date: Fixtures.day(1), discounted: true),   // trop ancienne
+            Fixtures.obs(2.90, store: "NODE:4", date: Fixtures.day(39)),                     // pas en promo
+        ]
+        let promos = PriceEngine.promotions(in: observations, now: now)
+        XCTAssertEqual(promos.map(\.observation.storeKey), ["NODE:2", "NODE:1"], "la moins chère d'abord, plus de 30 jours écartées")
+        XCTAssertNil(promos[0].regularPrice)
+        XCTAssertNil(promos[0].discountPercent)
+        XCTAssertEqual(promos[1].regularPrice ?? 0, 3.29, accuracy: 1e-9, "prix habituel du même magasin")
+        XCTAssertEqual(promos[1].discountPercent, 24)
+        XCTAssertTrue(PriceEngine.promotions(in: [], now: now).isEmpty)
+    }
+
+    func testProductInformationForAScan() throws {
+        let json = """
+        {"product": {"additives_tags": ["en:e322", "en:e322i", "en:e471", "en:e330"],
+          "ingredients_analysis_tags": ["en:palm-oil", "en:non-vegan", "en:vegetarian"],
+          "stores": "Carrefour, E.Leclerc", "manufacturing_places": "Villers-Écalles, France",
+          "categories": "Petit-déjeuners, Produits à tartiner, Pâtes à tartiner aux noisettes",
+          "ingredients_text": "Sucre, huile de palme, noisettes"}}
+        """
+        let facts = try XCTUnwrap(try JSONDecoder().decode(OpenFoodFactsAPI.FactsResponse.self, from: Fixtures.json(json)).product?.facts)
+        XCTAssertEqual(facts.additives, ["E322", "E322i", "E471", "E330"])
+        XCTAssertEqual(facts.possiblyAnimalAdditives, ["E471"])
+        XCTAssertEqual(facts.isVegan, false)
+        XCTAssertEqual(facts.isVegetarian, true)
+        XCTAssertEqual(facts.stores, "Carrefour, E.Leclerc")
+        XCTAssertEqual(facts.manufacturingPlaces, "Villers-Écalles, France")
+        XCTAssertEqual(facts.category, "Pâtes à tartiner aux noisettes")
+        XCTAssertTrue(facts.hasDescription)
+
+        let vegan = try XCTUnwrap(try JSONDecoder().decode(OpenFoodFactsAPI.FactsResponse.self, from: Fixtures.json(
+            #"{"product": {"additives_tags": ["en:e471"], "ingredients_analysis_tags": ["en:vegan"]}}"#)).product?.facts)
+        XCTAssertEqual(vegan.isVegan, true)
+        XCTAssertTrue(vegan.possiblyAnimalAdditives.isEmpty, "végan : E471 forcément végétal")
+    }
+}
+
 final class ProductDescriptionTests: XCTestCase {
     func testDescriptionAndNutrition() throws {
         let json = """

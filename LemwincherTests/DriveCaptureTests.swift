@@ -87,6 +87,38 @@ final class DriveCaptureTests: XCTestCase {
         XCTAssertTrue(leclerc.choosesStore)
     }
 
+    func testPromotionsReadOnThePage() {
+        let json = """
+        [
+          {"name": "Oeufs plein air x12", "price": 2.49, "brand": "AUCHAN", "promo": true, "oldPrice": 3.29},
+          {"name": "Beurre doux", "price": 2.35, "promo": true, "oldPrice": null},
+          {"name": "Lait demi-écrémé", "price": 0.99, "promo": false, "oldPrice": 0.89},
+          {"name": "Pâtes", "price": 1.10, "oldPrice": 1.50}
+        ]
+        """
+        let items = DriveCaptureParser.parse(json)
+        XCTAssertEqual(items.map(\.promo), [true, true, false, true])
+        XCTAssertEqual(items[0].oldPrice ?? 0, 3.29, accuracy: 1e-9)
+        XCTAssertNil(items[1].oldPrice, "badge « promo » sans ancien prix")
+        XCTAssertNil(items[2].oldPrice, "un « ancien prix » plus bas n'en est pas un")
+        XCTAssertTrue(items[3].promo, "un prix barré plus élevé suffit")
+    }
+
+    func testMoreSites() throws {
+        let monoprix = try XCTUnwrap(DriveSite.all.first { $0.id == "monoprix" })
+        XCTAssertEqual(monoprix.url(for: "œufs")?.absoluteString, "https://courses.monoprix.fr/search?q=%C5%93ufs")
+        XCTAssertTrue(monoprix.matches(Fixtures.store("NODE:1", name: "Monop'", brand: "Monop'")))
+        XCTAssertTrue(monoprix.matches(Fixtures.store("NODE:2", name: "Monoprix Toulouse", brand: "Monoprix")))
+        let chronodrive = try XCTUnwrap(DriveSite.all.first { $0.id == "chronodrive" })
+        XCTAssertEqual(chronodrive.url(for: "lait demi écrémé")?.absoluteString,
+                       "https://www.chronodrive.com/search/lait%20demi%20%C3%A9cr%C3%A9m%C3%A9")
+        XCTAssertTrue(chronodrive.choosesStore)
+        for id in ["picard", "naturalia", "lavieclaire"] {
+            XCTAssertNotNil(DriveSite.all.first { $0.id == id }, id)
+        }
+        XCTAssertEqual(Set(DriveSite.all.map(\.id)).count, DriveSite.all.count)
+    }
+
     func testSentenceCase() {
         XCTAssertEqual(DriveCaptureParser.sentenceCase("CRÈME LÉGÈRE FOUETTÉE"), "Crème légère fouettée")
         XCTAssertEqual(DriveCaptureParser.sentenceCase("Beurre doux extra fin"), "Beurre doux extra fin")

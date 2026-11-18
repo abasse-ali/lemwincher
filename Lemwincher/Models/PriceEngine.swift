@@ -182,6 +182,36 @@ struct BasketResult {
     }
 }
 
+/// Promotion relevée : le prix promo, et le prix habituel du même magasin s'il est connu.
+struct Promotion: Identifiable, Hashable {
+    let observation: PriceObservation
+    let regularPrice: Double?
+
+    var id: String { observation.id }
+
+    /// « -24 % » si le prix habituel est connu.
+    var discountPercent: Int? {
+        guard let regularPrice, regularPrice > observation.price else { return nil }
+        return Int(((regularPrice - observation.price) / regularPrice * 100).rounded())
+    }
+}
+
+extension PriceEngine {
+    /// Promotions relevées récemment (30 jours par défaut), la moins chère d'abord ; une par magasin.
+    static func promotions(in observations: [PriceObservation], now: Date = Date(), maxAgeDays: Int = 30) -> [Promotion] {
+        let limit = now.addingTimeInterval(-Double(maxAgeDays) * 86_400)
+        var byStore: [String: Promotion] = [:]
+        for obs in observations where obs.isDiscounted && obs.date >= limit {
+            if let current = byStore[obs.storeKey], current.observation.date >= obs.date { continue }
+            let regular = observations
+                .filter { $0.storeKey == obs.storeKey && !$0.isDiscounted && $0.price > obs.price }
+                .max { $0.date < $1.date }?.price
+            byStore[obs.storeKey] = Promotion(observation: obs, regularPrice: regular)
+        }
+        return byStore.values.sorted { $0.observation.price < $1.observation.price }
+    }
+}
+
 /// Prix retenu pour un article coché.
 struct PurchaseQuote: Equatable {
     /// Prix unitaire connu ; nil : à demander à l'utilisateur.

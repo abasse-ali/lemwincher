@@ -299,6 +299,13 @@ struct ProductDescriptionSection: View {
 
     var body: some View {
         Section {
+            if let category = facts.category {
+                Label {
+                    Text("Catégorie : ").font(.subheadline.weight(.semibold)) + Text(category).font(.subheadline)
+                } icon: {
+                    Image(systemName: "square.grid.2x2")
+                }
+            }
             if let ingredients = facts.ingredientsText {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("Ingrédients", systemImage: "list.bullet.rectangle")
@@ -318,11 +325,37 @@ struct ProductDescriptionSection: View {
                 }
                 .padding(.vertical, 2)
             }
+            if !facts.additives.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(facts.additives.count == 1 ? "1 additif" : "\(facts.additives.count) additifs",
+                          systemImage: "flask")
+                        .font(.subheadline.weight(.semibold))
+                    Text(facts.additives.map(Additives.label).joined(separator: ", "))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 2)
+            }
             if let origins = facts.origins {
                 Label {
                     Text("Origine : ").font(.subheadline.weight(.semibold)) + Text(origins).font(.subheadline)
                 } icon: {
                     Image(systemName: "globe.europe.africa")
+                }
+            }
+            if let places = facts.manufacturingPlaces {
+                Label {
+                    Text("Fabriqué à : ").font(.subheadline.weight(.semibold)) + Text(places).font(.subheadline)
+                } icon: {
+                    Image(systemName: "building.2")
+                }
+            }
+            if let stores = facts.stores {
+                Label {
+                    Text("Vendu chez : ").font(.subheadline.weight(.semibold)) + Text(stores).font(.subheadline)
+                } icon: {
+                    Image(systemName: "cart")
                 }
             }
             if let conservation = facts.conservation {
@@ -362,6 +395,90 @@ struct ProductDescriptionSection: View {
     }
 }
 
+/// Ligne d'alerte : icône colorée, titre, explication.
+struct AlertRow: View {
+    let symbol: String
+    let tint: Color
+    let title: String
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: symbol)
+                .font(.title2)
+                .foregroundStyle(tint)
+                .frame(width: 30)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.headline)
+                Text(text)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// En haut de la fiche d'un produit (après un scan) : rappel en cours (défaut, contamination, intoxication),
+/// porc, gélatine, additifs d'origine animale possible, promotions relevées, ou « aucun rappel ».
+struct ProductAlertsSection: View {
+    @Environment(AppModel.self) private var model
+    let product: Product
+    let facts: ProductFacts?
+    /// Prix relevés autour de soi (Open Prices et vos relevés), pour repérer les promos.
+    let observations: [PriceObservation]
+
+    var body: some View {
+        let recall = model.recall(for: product.code)
+        let noPork = model.settings.noPork
+        let porkByName = DietFilter.isPork(name: product.name, categories: product.categories)
+        let pork = porkByName || facts?.containsPork == true
+        let gelatin = facts?.unspecifiedGelatin == true
+        let animalAdditives = facts?.possiblyAnimalAdditives ?? []
+        let promos = Array(PriceEngine.promotions(in: observations).prefix(3))
+        let checked = !product.isCustom && model.recallChecked(product.code)
+
+        if recall != nil || (noPork && (pork || gelatin || !animalAdditives.isEmpty)) || !promos.isEmpty || checked {
+            Section {
+                if let recall {
+                    RecallBanner(recall: recall)
+                }
+                if noPork && (pork || gelatin) {
+                    DietWarningBanner(pork: pork, byName: porkByName)
+                }
+                if noPork && !pork && !animalAdditives.isEmpty {
+                    AlertRow(symbol: "info.circle.fill", tint: .orange,
+                             title: "Additifs parfois d'origine animale",
+                             text: animalAdditives.map(Additives.label).joined(separator: ", ")
+                                + " : souvent végétaux, ils peuvent aussi venir de graisses animales (porc possible). Cherchez la mention « d'origine végétale » sur l'emballage.")
+                }
+                ForEach(promos) { promo in
+                    let obs = promo.observation
+                    AlertRow(symbol: "tag.fill", tint: .pink,
+                             title: "Promo : \(Fmt.price(obs.price, obs.currency)) chez \(obs.storeName)"
+                                + (promo.discountPercent.map { " (−\($0) %)" } ?? ""),
+                             text: Fmt.join("Relevée \(Fmt.day(obs.date))",
+                                            promo.regularPrice.map { "prix habituel \(Fmt.price($0, obs.currency))" }))
+                }
+                if recall == nil && checked {
+                    AlertRow(symbol: "checkmark.shield.fill", tint: .green,
+                             title: "Aucun rappel en cours",
+                             text: "Vérifié sur RappelConso, le site officiel des rappels de produits (défauts, contaminations, risques d'intoxication).")
+                }
+                if noPork && !pork && facts?.isVegetarian == true {
+                    AlertRow(symbol: "leaf.fill", tint: .green,
+                             title: "Sans viande",
+                             text: "D'après sa liste d'ingrédients : donc sans porc.")
+                }
+            } header: {
+                Text("Alertes et vérifications")
+            }
+        }
+    }
+}
+
 /// Avertissement rouge : produit rappelé.
 struct RecallBanner: View {
     let recall: Recall
@@ -382,7 +499,13 @@ struct RecallBanner: View {
                     if let reason = recall.reason {
                         Text(reason).font(.caption).lineLimit(3)
                     }
-                    Text("Vérifiez le lot sur l'emballage. Touchez pour les détails.")
+                    if let risks = recall.risks {
+                        Label(risks, systemImage: "cross.case.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.red)
+                            .lineLimit(3)
+                    }
+                    Text("Vérifiez le lot sur l'emballage. Touchez pour les détails et la conduite à tenir.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }

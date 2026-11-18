@@ -129,7 +129,8 @@ enum StoreFinder {
     ]
 
     private static func overpassStores(lat: Double, lon: Double, radiusMeters: Int) async -> [Store]? {
-        let filter = "[\"shop\"~\"^(supermarket|convenience|hypermarket|wholesale|general)$\"]"
+        // Surgelés (Picard) et bio (Naturalia, La Vie Claire) en plus des supermarchés et supérettes.
+        let filter = "[\"shop\"~\"^(supermarket|convenience|hypermarket|wholesale|general|frozen_food|organic)$\"]"
         let around = "(around:\(radiusMeters),\(String(format: "%.6f", lat)),\(String(format: "%.6f", lon)))"
         // Points, bâtiments et aussi « relations » (magasins dessinés comme des zones à plusieurs contours).
         let query = "[out:json][timeout:25];(node\(filter)\(around);way\(filter)\(around);relation\(filter)\(around););out center tags;"
@@ -145,7 +146,8 @@ enum StoreFinder {
         async let supermarkets = photon(tag: "shop:supermarket", lat: lat, lon: lon, radiusKm: radiusKm)
         async let hypermarkets = photon(tag: "shop:hypermarket", lat: lat, lon: lon, radiusKm: radiusKm)
         async let convenience = photon(tag: "shop:convenience", lat: lat, lon: lon, radiusKm: radiusKm)
-        let lists = await [supermarkets, hypermarkets, convenience]
+        async let frozen = photon(tag: "shop:frozen_food", lat: lat, lon: lon, radiusKm: radiusKm)
+        let lists = await [supermarkets, hypermarkets, convenience, frozen]
         if lists.allSatisfy({ $0 == nil }) { return nil }
         let center = CLLocation(latitude: lat, longitude: lon)
         return lists.compactMap { $0 }.flatMap { $0 }
@@ -273,6 +275,8 @@ struct OverpassResponse: Decodable {
     static func label(for shop: String?) -> String {
         switch shop {
         case "supermarket", "hypermarket": return "Supermarché"
+        case "frozen_food": return "Surgelés"
+        case "organic": return "Magasin bio"
         case "convenience": return "Supérette"
         case "wholesale": return "Grossiste"
         case "general": return "Épicerie"

@@ -73,9 +73,9 @@ struct Store: Identifiable, Codable, Hashable {
         return Chain.displayName(for: key) ?? brand ?? name
     }
 
-    /// Supermarché / hypermarché / grossiste (par opposition aux supérettes).
+    /// Supermarché / hypermarché / grossiste / surgelés / bio (par opposition aux supérettes).
     var isSupermarket: Bool {
-        ["supermarket", "hypermarket", "wholesale"].contains(kind ?? "")
+        ["supermarket", "hypermarket", "wholesale", "frozen_food", "organic"].contains(kind ?? "")
     }
 
     /// Logo d'Open Prices, sinon celui de l'enseigne dans la banque d'images d'Open Food Facts.

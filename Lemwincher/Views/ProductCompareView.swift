@@ -66,20 +66,9 @@ struct ProductCompareView: View {
         let otherEstimates = estimates.filter { nearby[$0.key] == nil }
 
         List {
-            if let recall = model.recall(for: product.code) {
-                Section {
-                    RecallBanner(recall: recall)
-                }
-            }
-
-            // Sans porc : alerte si le nom ou la liste d'ingrédients révèle du porc (ou de la gélatine).
-            let porkByName = DietFilter.isPork(name: product.name, categories: product.categories)
-            let pork = porkByName || facts?.containsPork == true
-            if model.settings.noPork && (pork || facts?.unspecifiedGelatin == true) {
-                Section {
-                    DietWarningBanner(pork: pork, byName: porkByName)
-                }
-            }
+            // Rappel en cours, porc, gélatine, additifs, promos relevées… ou « aucun rappel en cours ».
+            ProductAlertsSection(product: product, facts: facts,
+                                 observations: local + model.myObservations(productCode: product.code))
 
             Section {
                 productHeader

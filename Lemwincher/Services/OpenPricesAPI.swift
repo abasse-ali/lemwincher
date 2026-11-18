@@ -439,11 +439,14 @@ enum OpenFoodFactsAPI {
         }
     }
 
-    static func product(code: String) async throws -> Product? {
+    /// Bases sœurs d'Open Food Facts, même format : cosmétiques, nourriture animale, autres produits.
+    static let sisterHosts = ["world.openbeautyfacts.org", "world.openpetfoodfacts.org", "world.openproductsfacts.org"]
+
+    static func product(code: String, host: String = "world.openfoodfacts.org") async throws -> Product? {
         let safe = code.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? code
         let fields = "product_name,product_name_fr,brands,quantity,image_front_small_url,image_small_url,product_quantity,product_quantity_unit,categories_tags"
         let response: Response = try await HTTP.get(
-            "https://world.openfoodfacts.org/api/v2/product/\(safe).json",
+            "https://\(host)/api/v2/product/\(safe).json",
             query: ["fields": fields]
         )
         guard let p = response.product,
@@ -522,14 +525,30 @@ struct ProductFacts: Hashable {
     var containsPork = false
     /// Gélatine sans origine précisée (souvent porcine).
     var unspecifiedGelatin = false
+    /// Additifs (« E330 », « E471 »…).
+    var additives: [String] = []
+    /// Analyse des ingrédients par Open Food Facts : végan / végétarien (nil : inconnu).
+    var isVegan: Bool? = nil
+    var isVegetarian: Bool? = nil
+    /// Enseignes où le produit est vendu (d'après les contributeurs), lieu de fabrication, catégorie.
+    var stores: String? = nil
+    var manufacturingPlaces: String? = nil
+    var category: String? = nil
+
+    /// Additifs qui peuvent être d'origine animale (porc possible), sauf produit végan.
+    var possiblyAnimalAdditives: [String] {
+        isVegan == true ? [] : additives.filter(Additives.isPossiblyAnimal)
+    }
 
     var isEmpty: Bool {
         nutriScore == nil && nova == nil && ecoScore == nil && allergens.isEmpty && labels.isEmpty
             && genericName == nil && ingredientsText == nil && nutrition.isEmpty && !containsPork
+            && additives.isEmpty && stores == nil
     }
 
     var hasDescription: Bool {
         genericName != nil || ingredientsText != nil || origins != nil || conservation != nil || !nutrition.isEmpty
+            || !additives.isEmpty || stores != nil || manufacturingPlaces != nil || category != nil
     }
 
     private static let allergenNames: [String: String] = [
@@ -581,6 +600,11 @@ extension OpenFoodFactsAPI {
         let origins: String?
         let conservation: String?
         let nutrition: Nutrition
+        let additivesTags: [String]?
+        let analysisTags: [String]?
+        let stores: String?
+        let manufacturingPlaces: String?
+        let categories: String?
 
         private enum CodingKeys: String, CodingKey {
             case nutriscoreGrade = "nutriscore_grade", novaGroup = "nova_group", ecoscoreGrade = "ecoscore_grade"
@@ -591,6 +615,8 @@ extension OpenFoodFactsAPI {
             case origins, originsFr = "origins_fr"
             case conservationFr = "conservation_conditions_fr", conservation = "conservation_conditions"
             case nutriments
+            case additivesTags = "additives_tags", analysisTags = "ingredients_analysis_tags"
+            case stores, manufacturingPlaces = "manufacturing_places", categories
         }
 
         init(from decoder: Decoder) throws {
@@ -618,6 +644,11 @@ extension OpenFoodFactsAPI {
                 nutrition.salt = n.lossyDouble(AnyCodingKey("salt_100g"))
             }
             self.nutrition = nutrition
+            additivesTags = try? c.decodeIfPresent([String].self, forKey: .additivesTags)
+            analysisTags = try? c.decodeIfPresent([String].self, forKey: .analysisTags)
+            stores = FactsProduct.text(c.lossyString(.stores))
+            manufacturingPlaces = FactsProduct.text(c.lossyString(.manufacturingPlaces))
+            categories = FactsProduct.text(c.lossyString(.categories))
         }
 
         /// Texte propre : espaces normalisés, « _lait_ » (allergène souligné par OFF) -> « lait ».
@@ -643,6 +674,20 @@ extension OpenFoodFactsAPI {
             let ingredients = ingredientsTags ?? []
             facts.containsPork = DietFilter.porkIngredients(ingredients)
             facts.unspecifiedGelatin = !facts.containsPork && DietFilter.unspecifiedGelatin(ingredients)
+            var seenAdditives = Set<String>()
+            facts.additives = (additivesTags ?? []).compactMap(Additives.code(fromTag:))
+                .filter { seenAdditives.insert($0).inserted }
+            let analysis = Set((analysisTags ?? []).map { $0.lowercased() })
+            if analysis.contains("en:vegan") { facts.isVegan = true }
+            if analysis.contains("en:non-vegan") { facts.isVegan = false }
+            if analysis.contains("en:vegetarian") || analysis.contains("en:vegan") { facts.isVegetarian = true }
+            if analysis.contains("en:non-vegetarian") { facts.isVegetarian = false }
+            facts.stores = stores
+            facts.manufacturingPlaces = manufacturingPlaces
+            // « Petit-déjeuners, Produits à tartiner, Pâtes à tartiner aux noisettes » -> la plus précise.
+            if let last = categories?.split(separator: ",").last {
+                facts.category = String(last).trimmed.nilIfBlank
+            }
             return facts
         }
     }
@@ -653,7 +698,8 @@ extension OpenFoodFactsAPI {
         let fields = ["nutriscore_grade", "nova_group", "ecoscore_grade", "environmental_score_grade", "allergens_tags",
                       "labels_tags", "ingredients_tags", "generic_name_fr", "generic_name", "ingredients_text_fr",
                       "ingredients_text", "origins", "origins_fr", "conservation_conditions_fr",
-                      "conservation_conditions", "nutriments"].joined(separator: ",")
+                      "conservation_conditions", "nutriments", "additives_tags", "ingredients_analysis_tags",
+                      "stores", "manufacturing_places", "categories"].joined(separator: ",")
         let response: FactsResponse = try await HTTP.get(
             "https://world.openfoodfacts.org/api/v2/product/\(safe).json",
             query: ["fields": fields, "lc": "fr"],
@@ -665,11 +711,20 @@ extension OpenFoodFactsAPI {
 }
 
 enum ProductLookup {
-    /// Nom, marque, photo, contenance et catégories d'un produit à partir de son code-barres.
+    /// Nom, marque, photo, contenance et catégories d'un produit à partir de son code-barres :
+    /// Open Prices, Open Food Facts, puis les bases sœurs (cosmétiques, animaux, autres produits).
     static func lookup(code: String) async -> Product? {
         if let p = try? await OpenPricesAPI.product(code: code), p.productName?.nilIfBlank != nil {
             return p.asProduct(code: code)
         }
-        return try? await OpenFoodFactsAPI.product(code: code)
+        if let found = try? await OpenFoodFactsAPI.product(code: code) {
+            return found
+        }
+        for host in OpenFoodFactsAPI.sisterHosts {
+            if let found = try? await OpenFoodFactsAPI.product(code: code, host: host) {
+                return found
+            }
+        }
+        return nil
     }
 }

@@ -61,7 +61,8 @@ final class AppModel {
     @ObservationIgnored private var fuelLoadedKey: String?
     @ObservationIgnored private var departmentKey: String?
     @ObservationIgnored private var recallsLoadedKey: String?
-    @ObservationIgnored private var checkedRecallCodes: Set<String> = []
+    /// Codes-barres déjà vérifiés auprès de RappelConso (observé : la fiche affiche « aucun rappel en cours »).
+    private var checkedRecallCodes: Set<String> = []
     @ObservationIgnored private var enrichedCodes: Set<String> = []
 
     init(arguments: [String] = ProcessInfo.processInfo.arguments) {
@@ -347,6 +348,11 @@ final class AppModel {
     func recall(for code: String) -> Recall? {
         guard code.isBarcodeLike else { return nil }
         return recallsByGTIN[Recall.normalizedGTIN(code)]
+    }
+
+    /// RappelConso a été interrogé pour ce code-barres (pour dire « aucun rappel en cours »).
+    func recallChecked(_ code: String) -> Bool {
+        checkedRecallCodes.contains(code)
     }
 
     // MARK: Produits suivis

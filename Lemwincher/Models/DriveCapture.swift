@@ -44,6 +44,20 @@ struct DriveSite: Identifiable, Hashable {
         DriveSite(id: "aldi", name: "Aldi", chainPrefix: "aldi",
                   home: "https://www.aldi.fr", searchTemplate: "https://www.aldi.fr/recherche.html?query={q}",
                   choosesStore: false),
+        DriveSite(id: "monoprix", name: "Monoprix", chainPrefix: "monop",
+                  home: "https://courses.monoprix.fr", searchTemplate: "https://courses.monoprix.fr/search?q={q}",
+                  choosesStore: false),
+        DriveSite(id: "chronodrive", name: "Chronodrive", chainPrefix: "chronodrive",
+                  home: "https://www.chronodrive.com", searchTemplate: "https://www.chronodrive.com/search/{q}"),
+        DriveSite(id: "picard", name: "Picard", chainPrefix: "picard",
+                  home: "https://www.picard.fr", searchTemplate: "https://www.picard.fr/recherche?q={q}",
+                  choosesStore: false),
+        DriveSite(id: "naturalia", name: "Naturalia", chainPrefix: "naturalia",
+                  home: "https://www.naturalia.fr", searchTemplate: "https://www.naturalia.fr/catalogsearch/result/?q={q}",
+                  choosesStore: false),
+        DriveSite(id: "lavieclaire", name: "La Vie Claire", chainPrefix: "la vie claire",
+                  home: "https://www.lavieclaire.com", searchTemplate: "https://www.lavieclaire.com/?s={q}",
+                  choosesStore: false),
     ]
 
     /// Site de l'enseigne la plus proche qui en a un (pour ouvrir directement le bon site).
@@ -65,23 +79,28 @@ struct CapturedPrice: Identifiable, Hashable, Decodable {
     var brand: String?
     /// Contenance ("250 g"), lue sur la page ou déduite du prix au kilo.
     var quantity: String?
+    /// En promotion sur la page (prix barré ou badge « promo »), avec l'ancien prix s'il est affiché.
+    var promo: Bool = false
+    var oldPrice: Double?
     var include: Bool = true
 
     /// Même nom, marque, contenance et prix = même ligne ("Œufs plein air" Auchan 6 et 12 pièces restent distincts).
     var id: String { [brand ?? "", name, quantity ?? "", String(format: "%.2f", price)].joined(separator: "|") }
 
     private enum CodingKeys: String, CodingKey {
-        case name, price, gtin, image, brand, quantity
+        case name, price, gtin, image, brand, quantity, promo, oldPrice
     }
 
     init(name: String, price: Double, gtin: String? = nil, image: String? = nil,
-         brand: String? = nil, quantity: String? = nil) {
+         brand: String? = nil, quantity: String? = nil, promo: Bool = false, oldPrice: Double? = nil) {
         self.name = name
         self.price = price
         self.gtin = gtin
         self.image = image
         self.brand = brand
         self.quantity = quantity
+        self.promo = promo
+        self.oldPrice = oldPrice
     }
 
     init(from decoder: Decoder) throws {
@@ -92,6 +111,8 @@ struct CapturedPrice: Identifiable, Hashable, Decodable {
         image = c.lossyString(.image)
         brand = c.lossyString(.brand)?.nilIfBlank
         quantity = c.lossyString(.quantity)?.nilIfBlank
+        promo = c.lossyBool(.promo) ?? false
+        oldPrice = c.lossyDouble(.oldPrice)
     }
 
     /// Produit enregistré : avec son code-barres quand le site le donne (comparable avec les autres prix).
@@ -122,6 +143,9 @@ enum DriveCaptureParser {
             cleaned.name = sentenceCase(item.name.split(whereSeparator: \.isWhitespace).joined(separator: " "))
             guard cleaned.name.count >= 3, cleaned.price >= 0.05, cleaned.price < 1000 else { continue }
             cleaned.price = (cleaned.price * 100).rounded() / 100
+            // Un ancien prix n'a de sens que plus élevé que le prix affiché.
+            if let old = cleaned.oldPrice, old <= cleaned.price || old >= 1000 { cleaned.oldPrice = nil }
+            if cleaned.oldPrice != nil { cleaned.promo = true }
             if seen.insert(cleaned.id).inserted { result.append(cleaned) }
         }
         return result
@@ -143,7 +167,7 @@ enum DriveCaptureParser {
       var out = [];
       var seen = {};
       function clean(text) { return text ? String(text).replace(/\s+/g, ' ').trim() : ''; }
-      function add(name, price, gtin, image, brand, quantity) {
+      function add(name, price, gtin, image, brand, quantity, promo) {
         if (!name || price === undefined || price === null) return;
         name = clean(name);
         var p = typeof price === 'number' ? price : parseFloat(String(price).replace(/[^0-9,.]/g, '').replace(',', '.'));
@@ -159,7 +183,9 @@ enum DriveCaptureParser {
         out.push({ name: name.slice(0, 160), price: Math.round(p * 100) / 100,
                    gtin: gtin ? String(gtin) : null, image: image ? String(image) : null,
                    brand: brand && brand.length <= 40 && brand.toLowerCase() !== name.toLowerCase() ? brand : null,
-                   quantity: quantity || null });
+                   quantity: quantity || null,
+                   promo: promo ? true : false,
+                   oldPrice: promo && promo.old > p ? Math.round(promo.old * 100) / 100 : null });
       }
       // Premier prix d'un texte qui n'est pas un prix au kilo / au litre : "2.99", "2,99 €", "2€99".
       function priceIn(text) {
@@ -169,6 +195,30 @@ enum DriveCaptureParser {
         return null;
       }
       function textOf(el) { return el ? clean(el.innerText || el.textContent) : ''; }
+      // Prix barrés (sélecteurs précis : « old » seul attraperait « price-holder », « bold »…).
+      var OLD_PRICE = 'del, s, strike, [class*="old-price" i], [class*="oldprice" i], [class*="old_price" i], ' +
+                      '[class*="price-old" i], [class*="price--old" i], [class*="price__old" i], [class*="strike" i], ' +
+                      '[class*="crossed" i], [class*="barre" i], [class*="was-price" i], [class*="wasprice" i], ' +
+                      '[class*="previous-price" i], [class*="price-before" i], [class*="before-price" i]';
+      // Texte d'une case prix sans le prix barré (« 3,29 € 2,49 € » -> « 2,49 € »).
+      function priceText(el) {
+        var copy = el.cloneNode(true);
+        copy.querySelectorAll(OLD_PRICE).forEach(function (x) { x.remove(); });
+        return clean(copy.textContent);
+      }
+      // Promo : ancien prix barré plus élevé, ou badge « promo », « -30 % », « 2 + 1 offert »…
+      function promoOf(tile, price) {
+        var olds = tile.querySelectorAll(OLD_PRICE);
+        for (var i = 0; i < olds.length; i++) {
+          var old = priceIn(textOf(olds[i]));
+          if (old && old > price) return { old: old };
+        }
+        var badges = tile.querySelectorAll('[class*="promo" i], [class*="discount" i], [class*="reduction" i], [class*="sticker" i], [class*="flag" i], [class*="badge" i]');
+        for (var j = 0; j < badges.length; j++) {
+          if (/promo|offert|remise|réduction|-\s?\d{1,2}\s?%|\d\s?\+\s?\d/i.test(textOf(badges[j]))) return { old: null };
+        }
+        return null;
+      }
       // Premier élément non vide parmi des sélecteurs classés du plus sûr au moins sûr.
       function firstOf(root, selectors) {
         for (var i = 0; i < selectors.length; i++) {
@@ -211,9 +261,19 @@ enum DriveCaptureParser {
         if (unit === 'kg') return amount >= 1000 ? (amount / 1000) + ' kg' : amount + ' g';
         return amount >= 1000 ? (amount / 1000) + ' l' : (amount % 10 === 0 ? (amount / 10) + ' cl' : amount + ' ml');
       }
+      // Photo : l'image affichée, sinon celle à charger plus tard (data-src, srcset), jamais un pixel d'attente.
       function imageOf(el) {
         var img = el.querySelector('img');
-        return img ? (img.currentSrc || img.src) : null;
+        if (!img) return null;
+        var candidates = [img.currentSrc, img.getAttribute('src'), img.getAttribute('data-src'),
+                          img.getAttribute('data-lazy-src'), (img.getAttribute('srcset') || '').split(' ')[0]];
+        for (var i = 0; i < candidates.length; i++) {
+          var url = candidates[i];
+          if (url && url.indexOf('data:') !== 0) {
+            try { return new URL(url, document.baseURI).href; } catch (e) { return url; }
+          }
+        }
+        return null;
       }
       function fromLD(node) {
         if (!node) return;
@@ -263,12 +323,12 @@ enum DriveCaptureParser {
           var price = null;
           for (var i = 0; i < PRICE.length && price === null; i++) {
             var boxes = tile.querySelectorAll(PRICE[i]);
-            for (var j = 0; j < boxes.length && price === null; j++) { price = priceIn(textOf(boxes[j])); }
+            for (var j = 0; j < boxes.length && price === null; j++) { price = priceIn(priceText(boxes[j])); }
           }
           if (price === null) return;
           var brandBox = tile.querySelector('[class*="brand" i], [itemprop~="brand"]');
           add(name, price, tile.getAttribute('data-gtin') || tile.getAttribute('data-ean'), imageOf(tile),
-              textOf(brandBox), quantityOf(tile, price));
+              textOf(brandBox), quantityOf(tile, price), promoOf(tile, price));
         });
       }
       if (out.length === 0) {
@@ -281,11 +341,12 @@ enum DriveCaptureParser {
           if (out.length >= 100) return;
           var text = card.innerText || '';
           if (text.length < 8 || text.length > 700) return;
-          var price = priceIn(text);
+          var price = priceIn(priceText(card));
           if (price === null) return;
           var found = firstOf(card, NAME);
           var title = found ? (found.el.getAttribute('title') || textOf(found.el)) : null;
-          add(title, price, null, imageOf(card), textOf(card.querySelector('[class*="brand" i]')), quantityOf(card, price));
+          add(title, price, null, imageOf(card), textOf(card.querySelector('[class*="brand" i]')), quantityOf(card, price),
+              promoOf(card, price));
         });
       }
       return JSON.stringify(out.slice(0, 120));
