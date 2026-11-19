@@ -196,7 +196,7 @@ struct ProductCompareView: View {
                         targetText = item.targetPrice.map { String(format: "%.2f", $0).replacingOccurrences(of: ".", with: ",") } ?? ""
                         showTargetAlert = true
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                     .controlSize(.small)
                 }
             } footer: {
@@ -257,7 +257,7 @@ struct ProductCompareView: View {
                 ActionTileLabel(title: inList ? "Dans ma liste" : "Ajouter à ma liste",
                                 systemImage: inList ? "checkmark.circle.fill" : "cart.badge.plus")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
             .disabled(inList)
 
             Button {
@@ -265,7 +265,7 @@ struct ProductCompareView: View {
             } label: {
                 ActionTileLabel(title: "Relever un prix", systemImage: "tag")
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
         }
     }
 
@@ -290,7 +290,7 @@ struct ProductCompareView: View {
                     Text("Personne n'a encore relevé ce produit à moins de \(Int(model.settings.radiusKm)) km.")
                         .foregroundStyle(.secondary)
                     Button("Relever son prix en magasin") { showAddPrice = true }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                 }
                 .padding(.vertical, 4)
             }

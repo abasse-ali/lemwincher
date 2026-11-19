@@ -39,7 +39,7 @@ struct RecipeDetailView: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity, minHeight: 50)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .tint(Color.brand)
                 .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 12, trailing: 16))
                 .listRowBackground(Color.clear)
@@ -104,9 +104,9 @@ struct RecipeDetailView: View {
                 Spacer()
                 Text(recipe.course.singular)
                     .font(.caption.bold())
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(.white.opacity(0.25), in: Capsule())
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .glassEffect(.regular, in: Capsule())
             }
             Text(recipe.name)
                 .font(.title2.bold())

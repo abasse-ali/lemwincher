@@ -62,6 +62,159 @@ struct ChainMonogram: View {
     }
 }
 
+// MARK: - Design « Liquid Glass » (iOS 26)
+
+/// Fond maillé aux couleurs de Lemwincher (verts et touche de citron), pour les cartes « héros ».
+struct BrandMesh: View {
+    /// Couleur dominante (vert par défaut ; orange ou rouge quand le budget déborde).
+    var tint: Color = .brand
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let dark = scheme == .dark
+        let deep = tint.mix(with: .black, by: dark ? 0.68 : 0.42)
+        MeshGradient(
+            width: 3, height: 3,
+            points: [
+                [0, 0], [0.55, 0], [1, 0],
+                [0, 0.5], [0.62, 0.42], [1, 0.55],
+                [0, 1], [0.45, 1], [1, 1],
+            ],
+            colors: [
+                deep, tint.opacity(0.95), tint,
+                tint.opacity(0.9), tint, Color.lemon.opacity(dark ? 0.55 : 0.7),
+                deep, deep.opacity(0.9), tint.opacity(0.85),
+            ]
+        )
+    }
+}
+
+/// Carte « héros » : fond maillé, coins très arrondis, texte blanc (budget, liste, bonnes affaires).
+struct HeroCard<Content: View>: View {
+    var tint: Color = .brand
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content
+            .foregroundStyle(.white)
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(BrandMesh(tint: tint), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .strokeBorder(.white.opacity(0.18), lineWidth: 1)
+            )
+            .shadow(color: tint.opacity(0.28), radius: 18, y: 8)
+    }
+}
+
+/// Tuile « bento » : icône sur pastille colorée, titre et sous-titre, fond de carte.
+struct BentoTile: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    var tint: Color = .brand
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 42, height: 42)
+                .background(tint.gradient, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 128, alignment: .topLeading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+}
+
+/// Puce de filtre en verre (teintée en vert quand elle est choisie).
+struct GlassChip: View {
+    let title: String
+    var systemImage: String? = nil
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Group {
+                if let systemImage {
+                    Label(title, systemImage: systemImage)
+                } else {
+                    Text(title)
+                }
+            }
+            .labelStyle(.titleAndIcon)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(selected ? Color.white : Color.primary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(selected ? .regular.tint(Color.brand).interactive() : .regular.interactive(), in: Capsule())
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+extension View {
+    /// Bouton principal d'un écran : verre teinté du vert Lemwincher, grande taille.
+    func primaryGlassButton() -> some View {
+        buttonStyle(.glassProminent)
+            .tint(Color.brand)
+            .controlSize(.large)
+    }
+
+    /// Ligne de liste sans fond ni marges (cartes héros, tuiles bento).
+    func clearListRow(top: CGFloat = 6, bottom: CGFloat = 6) -> some View {
+        listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: top, leading: 0, bottom: bottom, trailing: 0))
+            .listRowSeparator(.hidden)
+    }
+}
+
+/// Espace de noms des transitions « zoom » (une carte de recette s'agrandit jusqu'à la recette).
+extension EnvironmentValues {
+    @Entry var zoomNamespace: Namespace.ID? = nil
+}
+
+extension View {
+    /// Source d'une transition zoom (carte, vignette) quand l'écran en a une.
+    @ViewBuilder
+    func zoomSource(_ id: some Hashable, in namespace: Namespace.ID?) -> some View {
+        if let namespace {
+            matchedTransitionSource(id: id, in: namespace)
+        } else {
+            self
+        }
+    }
+
+    /// Écran ouvert par une transition zoom depuis sa carte.
+    @ViewBuilder
+    func zoomDestination(_ id: some Hashable, in namespace: Namespace.ID?) -> some View {
+        if let namespace {
+            navigationTransition(.zoom(sourceID: id, in: namespace))
+        } else {
+            self
+        }
+    }
+}
+
 /// Bouton d'action en tuile : icône au-dessus, texte court en dessous (fiche produit).
 struct ActionTileLabel: View {
     let title: String

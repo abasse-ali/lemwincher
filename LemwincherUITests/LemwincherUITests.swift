@@ -108,6 +108,11 @@ final class LemwincherUITests: XCTestCase {
     /// ne fait plus échouer le parcours (« element is no longer valid after interruption handling »).
     private func tab(_ app: XCUIApplication, _ label: String) {
         let button = app.tabBars.buttons[label]
+        // iOS 26 : la barre d'onglets se rétracte quand on fait défiler ; remonter la ramène.
+        for _ in 0..<3 where !(button.exists && button.isHittable) {
+            app.swipeDown()
+            sleep(1)
+        }
         XCTAssertTrue(button.waitForExistence(timeout: 10), "onglet \(label)")
         for _ in 0..<3 {
             button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()

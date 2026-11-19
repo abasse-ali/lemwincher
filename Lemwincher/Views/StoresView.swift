@@ -1,6 +1,11 @@
 import SwiftUI
 import MapKit
 
+/// Écrans ouverts depuis « Autour de moi » (tuiles de la carte héros).
+enum StoresRoute: Hashable {
+    case fuel, ranking
+}
+
 /// Onglet "Autour de moi" : carte, enseignes les moins chères et liste des magasins proches.
 struct StoresView: View {
     @Environment(AppModel.self) private var model
@@ -43,6 +48,12 @@ struct StoresView: View {
                 }
             }
             .appDestinations()
+            .navigationDestination(for: StoresRoute.self) { route in
+                switch route {
+                case .fuel: FuelView()
+                case .ranking: ChainRankingView()
+                }
+            }
             .sheet(item: selectedStore) { store in
                 StoreQuickSheet(store: store) {
                     selectedStoreID = nil
@@ -77,7 +88,14 @@ struct StoresView: View {
                 storeMarker(store)
             }
         }
-        .frame(height: 230)
+        // Commandes de Plans en verre (iOS 26) : ma position, boussole.
+        .mapControls {
+            MapUserLocationButton()
+            MapCompass()
+        }
+        .frame(height: 270)
+        // La carte passe sous la barre du haut, en verre.
+        .ignoresSafeArea(edges: .top)
     }
 
     /// Épingle d'un magasin : l'initiale de l'enseigne sur sa couleur (« E » bleu pour Leclerc),
@@ -127,6 +145,11 @@ struct StoresView: View {
         let report = model.chainIndex
 
         return List {
+            Section {
+                bestNearbyCard
+                    .clearListRow(top: 4, bottom: 4)
+            }
+
             if !favorites.isEmpty {
                 Section("Mes magasins") {
                     ForEach(favorites) { store in
@@ -139,8 +162,6 @@ struct StoresView: View {
                     }
                 }
             }
-
-            fuelSection
 
             chainSummarySection
 
@@ -191,22 +212,78 @@ struct StoresView: View {
         }
     }
 
-    /// Station-service la moins chère autour de soi.
-    private var fuelSection: some View {
-        let fuel = model.settings.fuelType
-        let best = FuelStats.ranked(model.fuelStations, fuel: fuel).first
+    /// Carte héros : l'enseigne la moins chère près de chez vous et le carburant le moins cher.
+    private var bestNearbyCard: some View {
         let reference = model.referenceLocation
-        return Section {
-            NavigationLink {
-                FuelView()
-            } label: {
-                FuelSummaryRow(fuel: fuel,
-                               best: best,
-                               distance: best.flatMap { station in reference.map { station.location.distance(from: $0) } },
-                               loading: model.fuelLoading)
+        let fuel = model.settings.fuelType
+        let bestFuel = FuelStats.ranked(model.fuelStations, fuel: fuel).first
+        let nearby = model.nearestStoreByChain
+        let bestChain = model.chainIndex?.entries.first { nearby[$0.key] != nil }
+        let bestStore = bestChain.flatMap { nearby[$0.key] }
+
+        return HeroCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Le moins cher autour de vous", systemImage: "sparkles")
+                    .font(.subheadline.weight(.semibold))
+                    .opacity(0.92)
+                GlassEffectContainer(spacing: 10) {
+                    HStack(spacing: 10) {
+                        Button {
+                            if let bestStore { path.append(bestStore) } else { path.append(StoresRoute.ranking) }
+                        } label: {
+                            heroTile(icon: "cart.fill",
+                                     title: bestChain?.name ?? "Enseignes",
+                                     value: bestChain?.differenceText ?? (model.chainIndexLoading ? "…" : "—"),
+                                     caption: bestStore.map { Fmt.join($0.name, $0.distance(from: reference).map { Fmt.distance($0) }) }
+                                        ?? (model.chainIndexLoading ? "Calcul du classement…" : "Classement des enseignes"))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("bestChainTile")
+
+                        Button {
+                            path.append(StoresRoute.fuel)
+                        } label: {
+                            heroTile(icon: "fuelpump.fill",
+                                     title: fuel.label,
+                                     value: (bestFuel?.price(for: fuel)?.value).map { Fmt.fuel($0) } ?? (model.fuelLoading ? "…" : "—"),
+                                     caption: bestFuel.map { station in
+                                         Fmt.join(station.title, reference.map { Fmt.distance(station.location.distance(from: $0)) })
+                                     } ?? (model.fuelLoading ? "Prix officiels…" : "Carburant le moins cher"))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("fuelLink")
+                    }
+                }
             }
-            .accessibilityIdentifier("fuelLink")
         }
+    }
+
+    /// Tuile en verre de la carte héros : icône, libellé, grand chiffre, précision.
+    private func heroTile(icon: String, title: String, value: String, caption: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.caption.weight(.bold))
+                Text(title).font(.caption.weight(.semibold)).lineLimit(1)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.caption2.weight(.bold)).opacity(0.7)
+            }
+            Text(value)
+                .font(.title2.bold().monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .contentTransition(.numericText())
+            Text(caption)
+                .font(.caption2)
+                .opacity(0.88)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(.white)
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     /// Les enseignes présentes autour de vous, de la moins chère à la plus chère.

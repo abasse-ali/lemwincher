@@ -12,6 +12,8 @@ struct RecipesView: View {
 
     @State private var mode: Mode = .ideas
     @State private var path = NavigationPath()
+    /// Transitions « zoom » : la carte d'une recette s'agrandit jusqu'à la recette.
+    @Namespace private var zoom
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -22,7 +24,8 @@ struct RecipesView: View {
                 case .week: WeekMenuView()
                 }
             }
-            .safeAreaInset(edge: .top, spacing: 0) {
+            // Barre du choix en verre, sous la barre de titre (le contenu défile dessous, iOS 26).
+            .safeAreaBar(edge: .top) {
                 Picker("Affichage", selection: $mode) {
                     ForEach(Mode.allCases) { mode in
                         Text(mode.rawValue).tag(mode)
@@ -30,8 +33,7 @@ struct RecipesView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(.bar)
+                .padding(.vertical, 6)
                 .accessibilityIdentifier("recipesMode")
             }
             .navigationTitle("Recettes")
@@ -41,14 +43,27 @@ struct RecipesView: View {
                 ToolbarItem(placement: .topBarTrailing) { DietMenu() }
             }
             .appDestinations()
+            .navigationDestination(for: ZoomedRecipe.self) { entry in
+                RecipeDetailView(recipe: entry.recipe)
+                    .zoomDestination(entry.source, in: zoom)
+            }
         }
+        .environment(\.zoomNamespace, zoom)
     }
+}
+
+/// Recette ouverte depuis sa carte (transition zoom) ; ailleurs, `Recipe` s'ouvre normalement.
+/// `source` : la carte d'où elle part (une recette peut être à la fois dans le bandeau et dans la liste).
+struct ZoomedRecipe: Hashable {
+    let recipe: Recipe
+    let source: String
 }
 
 // MARK: - Idées
 
 struct RecipeIdeasView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.zoomNamespace) private var zoom
     @State private var query = ""
     @State private var filter: IdeaFilter = .all
 
@@ -112,12 +127,13 @@ struct RecipeIdeasView: View {
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
                 ForEach(shown) { recipe in
-                    NavigationLink(value: recipe) {
+                    NavigationLink(value: ZoomedRecipe(recipe: recipe, source: "carte-\(recipe.id)")) {
                         RecipeCard(recipe: recipe,
                                    have: RecipeEngine.matchCount(recipe, listNames: listNames),
                                    favorite: model.isFavorite(recipe: recipe.id))
                     }
                     .buttonStyle(.plain)
+                    .zoomSource("carte-\(recipe.id)", in: zoom)
                     .accessibilityIdentifier("recipeCard")
                 }
                 if shown.isEmpty {
@@ -139,27 +155,22 @@ struct RecipeIdeasView: View {
         .searchable(text: $query, prompt: "Un plat ou un ingrédient (poulet, courgette…)")
     }
 
+    /// Filtres en puces de verre (la puce choisie est teintée de vert).
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(IdeaFilter.choices) { item in
-                    Button {
-                        withAnimation(.snappy) { filter = item }
-                    } label: {
-                        Label(item.label, systemImage: item.symbol)
-                            .font(.subheadline.weight(.semibold))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(filter == item ? Color.brand : Color(.secondarySystemGroupedBackground),
-                                        in: Capsule())
-                            .foregroundStyle(filter == item ? Color.white : Color.primary)
+            GlassEffectContainer(spacing: 8) {
+                HStack(spacing: 8) {
+                    ForEach(IdeaFilter.choices) { item in
+                        GlassChip(title: item.label, systemImage: item.symbol, selected: filter == item) {
+                            withAnimation(.snappy) { filter = item }
+                        }
                     }
-                    .buttonStyle(.plain)
                 }
+                .padding(.vertical, 4)
             }
-            .padding(.vertical, 2)
         }
         .scrollClipDisabled()
+        .sensoryFeedback(.selection, trigger: filter)
     }
 
     private func filtered(_ recipes: [Recipe]) -> [Recipe] {
@@ -272,13 +283,14 @@ struct RecipeCard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 }
 
 /// Bandeau horizontal de grandes cartes colorées.
 struct RecipeCarousel: View {
+    @Environment(\.zoomNamespace) private var zoom
     let title: String
     let subtitle: String
     let recipes: [Recipe]
@@ -293,10 +305,11 @@ struct RecipeCarousel: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 12) {
                     ForEach(recipes) { recipe in
-                        NavigationLink(value: recipe) {
+                        NavigationLink(value: ZoomedRecipe(recipe: recipe, source: "tuile-\(recipe.id)")) {
                             RecipeTile(recipe: recipe, have: RecipeEngine.matchCount(recipe, listNames: listNames))
                         }
                         .buttonStyle(.plain)
+                        .zoomSource("tuile-\(recipe.id)", in: zoom)
                     }
                 }
                 .scrollTargetLayout()
@@ -319,9 +332,9 @@ struct RecipeTile: View {
                 if have > 0 {
                     Text("\(have)/\(recipe.shoppingIngredients.count)")
                         .font(.caption.bold())
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.white.opacity(0.25), in: Capsule())
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .glassEffect(.regular, in: Capsule())
                 }
             }
             Spacer(minLength: 0)
@@ -330,14 +343,19 @@ struct RecipeTile: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
             Label(RecipeFormat.duration(recipe.minutes), systemImage: "clock")
+                .labelStyle(.titleAndIcon)
                 .font(.caption.weight(.semibold))
                 .opacity(0.9)
         }
         .foregroundStyle(.white)
-        .padding(14)
-        .frame(width: 200, height: 170, alignment: .topLeading)
-        .background(recipe.course.gradient, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
+        .padding(16)
+        .frame(width: 210, height: 180, alignment: .topLeading)
+        .background(recipe.course.gradient, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .strokeBorder(.white.opacity(0.18), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.16), radius: 12, y: 6)
     }
 }
 

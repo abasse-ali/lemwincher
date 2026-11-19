@@ -11,6 +11,9 @@ jobs:
     # Mac Intel : les Mac Apple Silicon (macos-latest) de GitHub étaient saturés en novembre 2026.
     # Si ce Mac Intel est un jour retiré par GitHub, remplacer par macos-latest.
     runs-on: macos-15-intel
+    # Xcode 26 (SDK iOS 26) : le design « Liquid Glass » d'iOS 26 / 27 (barres et boutons en verre).
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     # Compilation (~10 min) + tests unitaires + parcours d'interface (~20 min) + IPA (~5 min) : marge pour les Mac lents.
     timeout-minutes: 90
     steps:

@@ -17,15 +17,22 @@ struct BudgetView: View {
         NavigationStack {
             List {
                 Section {
-                    BudgetGauge(summary: summary, currency: currency)
-                        .accessibilityIdentifier("budgetGauge")
+                    // Carte héros : anneau du mois, reste à dépenser, rythme par jour.
+                    HeroCard(tint: summary.status == .ok ? .brand : (summary.status == .warning ? .orange : .red)) {
+                        BudgetGauge(summary: summary, currency: currency, onHero: true)
+                    }
+                    .accessibilityIdentifier("budgetGauge")
+                    .clearListRow(top: 4, bottom: 10)
                     Button {
                         showAddExpense = true
                     } label: {
-                        Label("Ajouter une dépense", systemImage: "plus.circle.fill")
+                        Label("Ajouter une dépense", systemImage: "plus")
                             .font(.headline)
+                            .frame(maxWidth: .infinity)
                     }
+                    .primaryGlassButton()
                     .accessibilityIdentifier("addExpenseButton")
+                    .clearListRow(top: 0, bottom: 4)
                 }
 
                 if let tip = model.savingsTip {
@@ -221,8 +228,11 @@ struct BudgetView: View {
 struct BudgetGauge: View {
     let summary: BudgetSummary
     let currency: String
+    /// Sur une carte héros (fond coloré) : anneau et chiffres en blanc.
+    var onHero = false
 
     private var color: Color {
+        if onHero { return .white }
         switch summary.status {
         case .ok: return Color.brand
         case .warning: return Color.orange
@@ -235,14 +245,17 @@ struct BudgetGauge: View {
             HStack(spacing: 18) {
                 ZStack {
                     Circle()
-                        .stroke(Color(.tertiarySystemFill), lineWidth: 14)
+                        .stroke(onHero ? Color.white.opacity(0.22) : Color(.tertiarySystemFill), lineWidth: 14)
                     Circle()
                         .trim(from: 0, to: min(summary.fraction, 1))
                         .stroke(color, style: StrokeStyle(lineWidth: 14, lineCap: .round))
                         .rotationEffect(.degrees(-90))
+                        .shadow(color: onHero ? .black.opacity(0.18) : .clear, radius: 4)
+                        .animation(.smooth(duration: 0.6), value: summary.fraction)
                     VStack(spacing: 0) {
                         Text("\(Int((summary.fraction * 100).rounded())) %")
                             .font(.title3.bold().monospacedDigit())
+                            .contentTransition(.numericText(value: summary.fraction))
                         Text("dépensé").font(.caption2).foregroundStyle(.secondary)
                     }
                 }
@@ -255,6 +268,7 @@ struct BudgetGauge: View {
                     Text(Fmt.price(abs(summary.remaining), currency))
                         .font(.largeTitle.bold().monospacedDigit())
                         .foregroundStyle(color)
+                        .contentTransition(.numericText(value: summary.remaining))
                         .minimumScaleFactor(0.6)
                         .lineLimit(1)
                     Text("\(Fmt.price(summary.spent, currency)) sur \(Fmt.price(summary.budget, currency))")
@@ -267,7 +281,7 @@ struct BudgetGauge: View {
             }
             Text(summary.message(currency: currency))
                 .font(.footnote)
-                .foregroundStyle(summary.status == .ok ? Color.secondary : color)
+                .foregroundStyle(onHero || summary.status == .ok ? AnyShapeStyle(.secondary) : AnyShapeStyle(color))
         }
         .padding(.vertical, 6)
     }
@@ -568,7 +582,7 @@ struct BudgetSettingsView: View {
                             Button(Fmt.price(value, model.settings.currency)) {
                                 amountText = String(format: "%.0f", value)
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.glass)
                             .controlSize(.small)
                         }
                     }

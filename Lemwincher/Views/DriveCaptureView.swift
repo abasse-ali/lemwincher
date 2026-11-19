@@ -287,7 +287,7 @@ struct DriveCaptureView: View {
                         Label("Capturer les prix de la page", systemImage: "text.viewfinder")
                             .labelStyle(.titleAndIcon)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     .disabled(session.running)
                 }
             }
@@ -324,7 +324,7 @@ struct DriveCaptureView: View {
             }
             Spacer(minLength: 8)
             Button("Arrêter") { session.stop() }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .accessibilityIdentifier("stopCapture")
         }
         .padding(14)

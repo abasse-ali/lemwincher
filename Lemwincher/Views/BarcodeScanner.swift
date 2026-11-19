@@ -33,7 +33,7 @@ struct BarcodeScannerSheet: View {
                                 UIApplication.shared.open(url)
                             }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glassProminent)
                     }
                     .foregroundStyle(Color.white)
                     .padding(32)
@@ -50,7 +50,7 @@ struct BarcodeScannerSheet: View {
                         let code = manualCode.trimmed
                         if !code.isEmpty { onCode(code) }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     .disabled(manualCode.trimmed.isEmpty)
                 }
                 .padding()

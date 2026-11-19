@@ -27,9 +27,9 @@ struct MyPricesContent: View {
                         Text("En magasin, touchez + : le magasin est détecté automatiquement, scannez un produit ou photographiez l'étiquette, et enchaînez avec le suivant. Après vos courses, photographiez le ticket de caisse pour tout ajouter d'un coup.")
                     } actions: {
                         Button("Relever un prix") { showAddPrice = true }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.glassProminent)
                         Button("Scanner un ticket de caisse") { showReceipt = true }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.glass)
                     }
                 } else {
                     if filter.trimmed.isEmpty {

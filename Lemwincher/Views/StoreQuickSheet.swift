@@ -47,7 +47,7 @@ struct StoreSiteButtons: View {
                     .font(.headline)
                     .frame(maxWidth: .infinity, minHeight: 50)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
             .tint(Color.brand)
         } else {
             Button(action: action) {
@@ -131,13 +131,13 @@ struct StoreQuickSheet: View {
                         Label("Itinéraire", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                 }
                 Button(action: onOpenDetail) {
                     Label("Fiche et prix", systemImage: "list.bullet.rectangle")
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .accessibilityIdentifier("storeQuickDetail")
             }
             .font(.subheadline.weight(.semibold))

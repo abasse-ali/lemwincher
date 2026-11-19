@@ -54,8 +54,7 @@ struct OnboardingView: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                .primaryGlassButton()
                 .accessibilityIdentifier("onboardingNext")
 
                 Button("Passer la présentation") { finish() }
@@ -65,12 +64,11 @@ struct OnboardingView: View {
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
         }
-        // Halo de la couleur de la page en haut de l'écran.
-        .background(alignment: .top) {
-            LinearGradient(colors: [pages[page].color.opacity(0.28), pages[page].color.opacity(0)],
-                           startPoint: .top, endPoint: .center)
+        // Dégradé maillé de la couleur de la page (avec une touche de citron).
+        .background {
+            OnboardingBackdrop(color: pages[page].color)
                 .ignoresSafeArea()
-                .animation(.easeInOut(duration: 0.4), value: page)
+                .animation(.easeInOut(duration: 0.5), value: page)
         }
         .sensoryFeedback(.selection, trigger: page)
         .interactiveDismissDisabled()
@@ -115,5 +113,27 @@ struct OnboardingView: View {
         if !model.isUITest {
             model.locationManager.request()
         }
+    }
+}
+
+/// Fond de la présentation : dégradé maillé de la couleur de la page, qui s'efface vers le bas.
+private struct OnboardingBackdrop: View {
+    let color: Color
+
+    var body: some View {
+        let base = Color(.systemBackground)
+        MeshGradient(
+            width: 3, height: 3,
+            points: [
+                [0, 0], [0.5, 0], [1, 0],
+                [0, 0.42], [0.55, 0.36], [1, 0.46],
+                [0, 1], [0.5, 1], [1, 1],
+            ],
+            colors: [
+                color.opacity(0.62), color.opacity(0.4), Color.lemon.opacity(0.38),
+                color.opacity(0.16), base, color.opacity(0.12),
+                base, base, base,
+            ]
+        )
     }
 }

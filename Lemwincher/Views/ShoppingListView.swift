@@ -151,7 +151,7 @@ struct ShoppingListView: View {
                         Text("Tapez un produit ci-dessus, ou ajoutez-le depuis l'onglet Produits (bouton « Ajouter à ma liste »). Lemwincher vous dira où faire vos courses pour payer le moins cher.")
                     } actions: {
                         Button("Produit sans code-barres") { showCustomAlert = true }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.glass)
                     }
                 } else {
                     Section {
@@ -290,35 +290,52 @@ struct ShoppingListView: View {
         let summary = model.budgetSummary
         let currency = model.settings.currency
         let best = model.state.shoppingList.isEmpty ? nil : basket.stores.first
+        let tint: Color = summary.status == .ok ? .brand : (summary.status == .warning ? .orange : .red)
         Section {
             Button {
                 model.selectedTab = .budget
             } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "eurosign.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(summary.status == .ok ? Color.brand : (summary.status == .warning ? Color.orange : Color.red))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(summary.remaining >= 0
-                             ? "Budget : il reste \(Fmt.price(summary.remaining, currency)) ce mois-ci"
-                             : "Budget dépassé de \(Fmt.price(-summary.remaining, currency))")
-                            .font(.subheadline.weight(.semibold))
+                // Carte héros : budget restant du mois et ce que coûte la liste au meilleur magasin.
+                HeroCard(tint: tint) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Label("Budget du mois", systemImage: "eurosign.circle.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .opacity(0.92)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.bold))
+                                .opacity(0.7)
+                        }
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(Fmt.price(abs(summary.remaining), currency))
+                                .font(.system(size: 34, weight: .bold).monospacedDigit())
+                                .contentTransition(.numericText(value: summary.remaining))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                            Text(summary.remaining >= 0 ? "restants" : "de dépassement")
+                                .font(.subheadline.weight(.semibold))
+                                .opacity(0.9)
+                        }
+                        ProgressView(value: min(max(summary.fraction, 0), 1))
+                            .progressViewStyle(.linear)
+                            .tint(.white)
                         if let best {
                             Text(basketBudgetText(best: best, remaining: summary.remaining, currency: currency))
-                                .font(.caption)
-                                .foregroundStyle(best.total <= summary.remaining ? Color.secondary : Color.orange)
+                                .font(.footnote.weight(.medium))
+                                .opacity(0.92)
+                                .fixedSize(horizontal: false, vertical: true)
                         } else {
                             Text("\(Fmt.price(summary.dailyAllowance, currency)) par jour jusqu'à la fin du mois")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(.footnote.weight(.medium))
+                                .opacity(0.92)
                         }
                     }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                 }
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("listBudget")
+            .clearListRow(top: 4, bottom: 4)
         }
     }
 
@@ -696,7 +713,7 @@ struct ProductChoicesView: View {
                     Button("Réessayer") {
                         Task { await model.loadSuggestions(for: query) }
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                     .controlSize(.small)
                 }
             }

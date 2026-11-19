@@ -810,7 +810,7 @@ struct LocationNeededView: View {
                         UIApplication.shared.open(url)
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
             } else if status == .notDetermined {
                 Text("Trouvez le moins cher près de chez vous").font(.title3.bold())
                     .multilineTextAlignment(.center)
@@ -818,7 +818,7 @@ struct LocationNeededView: View {
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                 Button("Autoriser la localisation") { model.locationManager.request() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
             } else {
                 ProgressView()
                 Text("Recherche de votre position…").foregroundStyle(.secondary)

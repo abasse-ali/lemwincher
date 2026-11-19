@@ -172,7 +172,7 @@ struct AddPriceView: View {
                         Label("Enregistrer et relever le suivant", systemImage: "barcode.viewfinder")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     .disabled(!canSave)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets())

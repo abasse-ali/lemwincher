@@ -136,34 +136,32 @@ struct SearchView: View {
 
     @ViewBuilder
     private var idleContent: some View {
+        // Deux grandes tuiles : scanner un code-barres, comparer le rapport quantité/prix.
         Section {
-            Button {
-                showScanner = true
-            } label: {
-                Label("Scanner un code-barres en magasin", systemImage: "barcode.viewfinder")
-                    .font(.headline)
+            HStack(spacing: 12) {
+                Button {
+                    showScanner = true
+                } label: {
+                    BentoTile(title: "Scanner",
+                              subtitle: "Le prix d'un produit dans chaque magasin autour de vous",
+                              systemImage: "barcode.viewfinder", tint: .blue)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("scanTile")
+
+                Button {
+                    path.append(ValueCompareRoute())
+                } label: {
+                    BentoTile(title: "Comparer",
+                              subtitle: "Le plus avantageux au kilo, au litre ou à la pièce",
+                              systemImage: "scalemass.fill", tint: .brand)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("compareLink")
             }
+            .clearListRow(top: 2, bottom: 2)
         } footer: {
             Text("Scannez ou cherchez un produit pour voir son prix dans chaque magasin autour de vous, du moins cher au plus cher.")
-        }
-
-        Section {
-            NavigationLink(value: ValueCompareRoute()) {
-                HStack(spacing: 12) {
-                    Image(systemName: "scalemass.fill")
-                        .font(.title3)
-                        .foregroundStyle(Color.white)
-                        .frame(width: 40, height: 40)
-                        .background(Color.brand.gradient, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Comparer des produits").font(.headline)
-                        Text("Le plus avantageux au kilo, au litre ou à la pièce : 10 steaks à 7,99 € ou 2 à 3,99 € ?")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .accessibilityIdentifier("compareLink")
         }
 
         Section {

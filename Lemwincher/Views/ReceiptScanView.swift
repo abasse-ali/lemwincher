@@ -108,7 +108,7 @@ struct ReceiptScanView: View {
                     Label("Photographier le ticket", systemImage: "camera.fill")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 if let message {
                     Text(message).font(.footnote).foregroundStyle(Color.orange)
                 }

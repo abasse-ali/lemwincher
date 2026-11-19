@@ -203,7 +203,7 @@ struct CookingModeView: View {
                             .font(.headline)
                             .frame(maxWidth: .infinity, minHeight: 50)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     .tint(.orange)
                     .accessibilityIdentifier("startTimer")
                 }
@@ -229,7 +229,7 @@ struct CookingModeView: View {
                 } label: {
                     Label(favorite ? "Dans vos favoris" : "Ajouter aux favoris", systemImage: favorite ? "star.fill" : "star")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .tint(favorite ? .yellow : Color.brand)
             }
             Spacer()
@@ -294,7 +294,7 @@ struct CookingModeView: View {
                     .font(.title3.bold())
                     .frame(width: 56, height: 56)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
             .disabled(page == 0)
             .accessibilityLabel("Étape précédente")
 
@@ -305,7 +305,7 @@ struct CookingModeView: View {
                     .font(.headline)
                     .frame(maxWidth: .infinity, minHeight: 56)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
             .tint(Color.brand)
             .accessibilityIdentifier("cookingNext")
         }

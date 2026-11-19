@@ -37,7 +37,7 @@ struct ComposeDishView: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity, minHeight: 48)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .tint(Color.brand)
                 .sensoryFeedback(.impact, trigger: rolls)
                 .accessibilityIdentifier("surpriseDish")
