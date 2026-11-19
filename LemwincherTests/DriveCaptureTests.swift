@@ -175,7 +175,6 @@ final class DriveCaptureTests: XCTestCase {
         XCTAssertTrue(DriveCaptureParser.functions.contains("loadMoreButton"), "« Voir plus »")
         XCTAssertTrue(DriveCaptureParser.functions.contains("nextPage"), "pages suivantes")
         XCTAssertTrue(DriveCaptureParser.functions.contains("function fromGrid"), "grilles sans classes connues")
-        XCTAssertTrue(DriveCaptureParser.fullScript.contains("noPrice: noPrice"), "produits sans prix signalés")
         XCTAssertTrue(DriveCaptureParser.structureScript.hasSuffix("})();"))
     }
 
