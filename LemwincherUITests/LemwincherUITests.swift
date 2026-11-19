@@ -108,9 +108,17 @@ final class LemwincherUITests: XCTestCase {
         sleep(1)
     }
 
+    /// Revient à l'écran précédent : bouton retour (iOS 26 : le premier bouton de la barre peut être
+    /// la roue dentée de l'écran d'en dessous), sinon glissement depuis le bord gauche.
     private func goBack(_ app: XCUIApplication) {
-        let back = app.navigationBars.buttons.firstMatch
-        if back.exists { back.tap() }
+        for back in [app.navigationBars.buttons["BackButton"], app.navigationBars.buttons["Retour"],
+                     app.navigationBars.buttons["Back"]] where back.exists && back.isHittable {
+            back.tap()
+            sleep(1)
+            return
+        }
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
         sleep(1)
     }
 
@@ -490,11 +498,7 @@ final class LemwincherUITests: XCTestCase {
             card.tap()
             sleep(2)
             snapshot("21-recette")
-            app.swipeUp()
-            sleep(1)
-            snapshot("21b-recette-suite")
-            app.swipeDown()
-            app.swipeDown()
+            // Pas de glissement vers le bas ici : la recette, ouverte en zoom, se refermerait.
             let cook = element(app, "startCooking")
             if cook.waitForExistence(timeout: 5) && cook.isHittable {
                 cook.tap()
@@ -518,6 +522,9 @@ final class LemwincherUITests: XCTestCase {
                 if close.waitForExistence(timeout: 3) { close.tap() }
                 sleep(1)
             }
+            app.swipeUp()
+            sleep(1)
+            snapshot("21b-recette-suite")
             goBack(app)
         }
 
