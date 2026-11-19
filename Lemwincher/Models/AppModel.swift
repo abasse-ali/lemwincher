@@ -757,10 +757,13 @@ final class AppModel {
         trackedRefreshing = true
         defer { trackedRefreshing = false }
         let session = CaptureSession(viewport: CGRect(x: 0, y: 0, width: 390, height: 844))
+        // Dans la fenêtre (derrière l'interface) : le site charge tous ses produits comme à l'écran.
+        session.attachBehindInterface()
+        defer { session.detachFromInterface() }
         let currency = state.settings.currency
         for page in due {
             guard let url = URL(string: page.url) else { continue }
-            let json = await session.capture(url: url, maxMs: 25_000)
+            let json = await session.capture(url: url, maxMs: 60_000)
             let items = DriveCaptureParser.parse(json)
             guard let index = state.trackedPages.firstIndex(where: { $0.id == page.id }) else { continue }
             state.trackedPages[index].lastChecked = Date()

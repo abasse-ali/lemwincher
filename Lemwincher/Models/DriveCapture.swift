@@ -690,16 +690,58 @@ enum DriveCaptureParser {
       if (!href || href === '#' || href.indexOf('javascript:') === 0) return null;
       try { return new URL(href, from).href; } catch (e) { return null; }
     }
-    // Lit TOUS les produits : défile, touche « Voir plus » tant qu'il en vient, puis suit les pages suivantes.
+    // Ce qui défile : la page, et les blocs intérieurs qui défilent (sites mobiles : Leclerc Drive…).
+    function scrollers() {
+      var list = [];
+      var main = document.scrollingElement || document.documentElement;
+      if (main && main.scrollHeight > window.innerHeight + 40) list.push(main);
+      var els = document.querySelectorAll('div, main, section, ul, ol');
+      for (var i = 0; i < els.length && list.length < 8; i++) {
+        var el = els[i];
+        if (el.clientHeight < 200 || el.scrollHeight <= el.clientHeight + 80) continue;
+        if (!/(auto|scroll)/.test(getComputedStyle(el).overflowY)) continue;
+        list.push(el);
+      }
+      return list;
+    }
+    function isMain(el) { return el === (document.scrollingElement || document.documentElement); }
+    // Avance d'environ un écran dans chaque bloc qui défile ; vrai si quelque chose a bougé.
+    function scrollStep() {
+      var moved = false;
+      scrollers().forEach(function (el) {
+        var view = isMain(el) ? window.innerHeight : el.clientHeight;
+        var before = isMain(el) ? window.scrollY : el.scrollTop;
+        if (isMain(el)) { window.scrollTo(0, before + view * 0.8); } else { el.scrollTop = before + view * 0.8; }
+        var after = isMain(el) ? window.scrollY : el.scrollTop;
+        if (after > before + 2) moved = true;
+      });
+      return moved;
+    }
+    function scrollAllToTop() {
+      scrollers().forEach(function (el) { if (isMain(el)) { window.scrollTo(0, 0); } else { el.scrollTop = 0; } });
+    }
+    // Produits sans prix : seulement ceux qui n'ont jamais eu de prix pendant la lecture
+    // (un prix chargé en arrivant à l'écran retire le produit de la liste).
+    function finalNoPrice() {
+      var names = out.map(function (o) { return String(o.name).toLowerCase(); });
+      return noPrice.filter(function (n) {
+        var l = n.toLowerCase();
+        return !names.some(function (o) { return o === l || (o.length >= 6 && l.indexOf(o) >= 0); });
+      });
+    }
+    // Lit TOUS les produits : parcourt la page écran par écran (les sites chargent produits et prix
+    // en arrivant à l'écran), touche « Voir plus » tant qu'il en vient, puis suit les pages suivantes.
     async function captureAll(maxMs) {
       window.__lemwincherStop = false;
       var start = Date.now();
       extract(document);
       report();
-      var last = out.length, quiet = 0;
+      scrollAllToTop();
+      await sleep(500);
+      var last = out.length, idle = 0;
       while (!stopped() && Date.now() - start < maxMs && out.length < LIMIT) {
-        window.scrollTo(0, document.documentElement.scrollHeight);
-        await sleep(800);
+        var moved = scrollStep();
+        await sleep(moved ? 700 : 1200);
         var more = loadMoreButton();
         if (more) {
           try { more.scrollIntoView({ block: 'center' }); more.click(); } catch (e) {}
@@ -707,10 +749,14 @@ enum DriveCaptureParser {
         }
         extract(document);
         report();
-        if (out.length > last) { last = out.length; quiet = 0; }
-        else { quiet += 1; if ((!more && quiet >= 2) || quiet >= 4) break; }
+        if (out.length > last) { last = out.length; idle = 0; }
+        else if (!moved && !more) {
+          // En bas de la page et plus rien ne se charge depuis quelques secondes : c'est fini.
+          idle += 1;
+          if (idle >= 3) break;
+        }
       }
-      window.scrollTo(0, 0);
+      scrollAllToTop();
       var url = nextPage(document, document.baseURI), visited = {}, pages = 0;
       while (url && !visited[url] && pages < 20 && !stopped() && Date.now() - start < maxMs + 30000 && out.length < LIMIT) {
         visited[url] = true;
@@ -772,9 +818,10 @@ enum DriveCaptureParser {
     })();
     """#
 
-    /// Lecture de tous les produits : « Voir plus » et pages suivantes (45 s au plus sur la page, puis 30 s de pages).
+    /// Lecture de tous les produits : page parcourue écran par écran, « Voir plus » et pages suivantes
+    /// (2 min au plus sur la page, puis 30 s de pages suivantes).
     /// Le résultat revient par message (« done ») ; `window.__lemwincherOut` garde ce qui est lu en cas d'arrêt.
-    static let fullScript = captureScript(maxMs: 45000)
+    static let fullScript = captureScript(maxMs: 120_000)
 
     /// Même lecture, avec une durée maximale sur la page (plus courte pour les mises à jour automatiques).
     static func captureScript(maxMs: Int) -> String {
@@ -782,7 +829,7 @@ enum DriveCaptureParser {
 
         window.__lemwincherOut = out;
         function done(json) {
-          try { window.webkit.messageHandlers.lemwincher.postMessage({ done: json, noPrice: noPrice }); } catch (e) {}
+          try { window.webkit.messageHandlers.lemwincher.postMessage({ done: json, noPrice: finalNoPrice() }); } catch (e) {}
         }
         captureAll(\(maxMs)).then(done, function () { done(JSON.stringify(out)); });
         })();

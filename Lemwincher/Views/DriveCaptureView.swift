@@ -25,6 +25,26 @@ final class CaptureSession: NSObject, ObservableObject, WKScriptMessageHandler, 
 
     // MARK: Lecture invisible d'une page (rayons suivis)
 
+    /// Hors de toute fenêtre, iOS n'affiche pas la page : les sites qui chargent produits et prix « en arrivant
+    /// à l'écran » n'y chargeraient rien. La page est donc posée derrière l'interface (couverte par l'app),
+    /// presque transparente et sans toucher, le temps de la lecture.
+    @MainActor
+    func attachBehindInterface() {
+        guard webView.window == nil,
+              let window = UIApplication.shared.connectedScenes
+                  .compactMap({ $0 as? UIWindowScene })
+                  .flatMap(\.windows)
+                  .first(where: \.isKeyWindow) else { return }
+        webView.alpha = 0.01
+        webView.isUserInteractionEnabled = false
+        window.insertSubview(webView, at: 0)
+    }
+
+    @MainActor
+    func detachFromInterface() {
+        webView.removeFromSuperview()
+    }
+
     private var loadCompletion: ((Bool) -> Void)?
 
     /// Charge une page sans l'afficher ; `completion` une seule fois (chargée, échec ou 30 s écoulées).
@@ -95,7 +115,8 @@ final class CaptureSession: NSObject, ObservableObject, WKScriptMessageHandler, 
             if error != nil { self?.onDone?("[]") }
         }
         // Filet de sécurité : la page a pu changer pendant la lecture (le script ne répondrait jamais).
-        DispatchQueue.main.asyncAfter(deadline: .now() + 100) { [weak self] in
+        // (lecture de la page jusqu'à 2 min, puis 30 s de pages suivantes).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 180) { [weak self] in
             guard let self, self.token == current, self.running else { return }
             self.collectPartial()
         }
