@@ -14,12 +14,14 @@ struct RecipesView: View {
     @State private var path = NavigationPath()
     /// Transitions « zoom » : la carte d'une recette s'agrandit jusqu'à la recette.
     @Namespace private var zoom
+    /// Écrire une nouvelle recette (« + » ou carte « Créez vos recettes »).
+    @State private var editing: MyRecipeEditorRequest?
 
     var body: some View {
         NavigationStack(path: $path) {
             Group {
                 switch mode {
-                case .ideas: RecipeIdeasView()
+                case .ideas: RecipeIdeasView(onCreate: newRecipe)
                 case .compose: ComposeDishView()
                 case .week: WeekMenuView()
                 }
@@ -40,15 +42,33 @@ struct RecipesView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { SettingsButton() }
-                ToolbarItem(placement: .topBarTrailing) { DietMenu() }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button(action: newRecipe) {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Nouvelle recette")
+                    .accessibilityIdentifier("newMyRecipe")
+                    DietMenu()
+                }
             }
             .appDestinations()
             .navigationDestination(for: ZoomedRecipe.self) { entry in
                 RecipeDetailView(recipe: entry.recipe)
                     .zoomDestination(entry.source, in: zoom)
             }
+            .sheet(item: $editing) { request in
+                MyRecipeEditor(recipe: request.recipe, isNew: request.isNew) { saved in
+                    // La recette s'ouvre une fois la feuille fermée.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { path.append(saved.recipe) }
+                }
+            }
         }
         .environment(\.zoomNamespace, zoom)
+        .environment(\.openRecipe) { recipe in path.append(recipe) }
+    }
+
+    private func newRecipe() {
+        editing = MyRecipeEditorRequest(recipe: MyRecipe(), isNew: true)
     }
 }
 
@@ -64,17 +84,20 @@ struct ZoomedRecipe: Hashable {
 struct RecipeIdeasView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.zoomNamespace) private var zoom
+    /// Écrire une nouvelle recette.
+    var onCreate: () -> Void = {}
     @State private var query = ""
     @State private var filter: IdeaFilter = .all
 
     enum IdeaFilter: Hashable, Identifiable {
-        case all, course(RecipeCourse), quick, cheap, vegetarian, favorites
+        case all, mine, course(RecipeCourse), quick, cheap, vegetarian, favorites
 
         var id: String { label }
 
         var label: String {
             switch self {
             case .all: return "Tout"
+            case .mine: return "Mes recettes"
             case .course(let course): return course.label
             case .quick: return "≤ 20 min"
             case .cheap: return "Économique"
@@ -86,6 +109,7 @@ struct RecipeIdeasView: View {
         var symbol: String {
             switch self {
             case .all: return "square.grid.2x2"
+            case .mine: return "square.and.pencil"
             case .course(.main): return "fork.knife"
             case .course(.starter): return "leaf"
             case .course(.dessert): return "birthday.cake"
@@ -97,7 +121,7 @@ struct RecipeIdeasView: View {
             }
         }
 
-        static let choices: [IdeaFilter] = [.all, .course(.main), .course(.starter), .course(.dessert),
+        static let choices: [IdeaFilter] = [.all, .mine, .course(.main), .course(.starter), .course(.dessert),
                                              .course(.breakfast), .quick, .cheap, .vegetarian, .favorites]
     }
 
@@ -111,6 +135,14 @@ struct RecipeIdeasView: View {
             LazyVStack(alignment: .leading, spacing: 18) {
                 if query.trimmed.isEmpty {
                     DietBanner()
+                    let mine = recipes.filter(\.isMine)
+                    if mine.isEmpty {
+                        CreateRecipeCard(action: onCreate)
+                    } else {
+                        RecipeCarousel(title: "Mes recettes",
+                                       subtitle: "Vos recettes, et vos versions de celles de l'app.",
+                                       recipes: Array(mine.prefix(12)), listNames: listNames, onAdd: onCreate)
+                    }
                     if !fromList.isEmpty {
                         RecipeCarousel(title: "Avec ce qu'il y a dans votre liste",
                                        subtitle: "Les recettes qui utilisent le plus d'articles de « Ma liste ».",
@@ -140,9 +172,11 @@ struct RecipeIdeasView: View {
                     ContentUnavailableView {
                         Label(filter == .favorites ? "Aucun favori" : "Aucune recette", systemImage: "fork.knife")
                     } description: {
-                        Text(filter == .favorites
-                             ? "Touchez ☆ en haut d'une recette pour la retrouver ici."
-                             : "Essayez un autre mot, ou composez votre plat dans « Composer ».")
+                        switch filter {
+                        case .favorites: Text("Touchez ☆ en haut d'une recette pour la retrouver ici.")
+                        case .mine: Text("Touchez + en haut de l'écran pour écrire votre première recette, ou « … › Personnaliser » sur une recette de l'app.")
+                        default: Text("Essayez un autre mot, ou composez votre plat dans « Composer ».")
+                        }
                     }
                     .padding(.top, 20)
                 }
@@ -176,6 +210,7 @@ struct RecipeIdeasView: View {
     private func filtered(_ recipes: [Recipe]) -> [Recipe] {
         switch filter {
         case .all: return recipes
+        case .mine: return recipes.filter(\.isMine)
         case .course(let course): return recipes.filter { $0.course == course }
         case .quick: return recipes.filter(\.isQuick)
         case .cheap: return recipes.filter { $0.tags.contains(.cheap) }
@@ -267,6 +302,9 @@ struct RecipeCard: View {
                     .multilineTextAlignment(.leading)
                 // Pastilles qui passent à la ligne plutôt que d'être coupées.
                 FlowLayout(spacing: 10) {
+                    if recipe.isMine {
+                        InfoPill(text: "Ma recette", symbol: "square.and.pencil", tint: Color.brand)
+                    }
                     InfoPill(text: RecipeFormat.duration(recipe.minutes), symbol: "clock")
                     if recipe.isVegetarian {
                         InfoPill(text: "Végétarien", symbol: "leaf.fill", tint: .green)
@@ -288,6 +326,42 @@ struct RecipeCard: View {
     }
 }
 
+/// Carte « Créez vos recettes » (tant que « Mes recettes » est vide).
+struct CreateRecipeCard: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                Image(systemName: "square.and.pencil")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 52, height: 52)
+                    .background(Color.brand.gradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Créez vos recettes")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text("Vos plats à vous, avec vos quantités et vos étapes. Ou collez une recette copiée d'un site : l'app la remplit.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "plus.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(Color.brand)
+            }
+            .padding(14)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("createMyRecipeCard")
+    }
+}
+
 /// Bandeau horizontal de grandes cartes colorées.
 struct RecipeCarousel: View {
     @Environment(\.zoomNamespace) private var zoom
@@ -295,12 +369,26 @@ struct RecipeCarousel: View {
     let subtitle: String
     let recipes: [Recipe]
     let listNames: [String]
+    /// Bouton « + » à côté du titre (Mes recettes).
+    var onAdd: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.title3.bold())
-                Text(subtitle).font(.footnote).foregroundStyle(.secondary)
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.title3.bold())
+                    Text(subtitle).font(.footnote).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                if let onAdd {
+                    Button(action: onAdd) {
+                        Label("Nouvelle", systemImage: "plus")
+                            .labelStyle(.titleAndIcon)
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .buttonStyle(.glass)
+                    .accessibilityIdentifier("addMyRecipe")
+                }
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 12) {

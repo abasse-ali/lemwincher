@@ -571,6 +571,52 @@ final class LemwincherUITests: XCTestCase {
         // Retour sur « Idées » pour les prochaines fois.
         let ideas = app.segmentedControls.buttons["Idées"].firstMatch
         if ideas.exists { ideas.tap() }
+        sleep(1)
+
+        // Mes recettes : écrire une recette en collant son texte.
+        writeMyRecipe(app)
+    }
+
+    /// « + » › « Coller une recette » › texte › « Remplir » › « Enregistrer » : la recette s'ouvre.
+    private func writeMyRecipe(_ app: XCUIApplication) {
+        let new = element(app, "newMyRecipe")
+        guard new.waitForExistence(timeout: 5) else {
+            dump(app, "25-nouvelle-recette-introuvable")
+            return
+        }
+        new.tap()
+        sleep(1)
+        snapshot("25-nouvelle-recette")
+        let paste = element(app, "importRecipeText")
+        guard paste.waitForExistence(timeout: 5) else { return }
+        paste.tap()
+        sleep(1)
+        let field = app.textViews["importRecipeTextField"].firstMatch
+        if field.waitForExistence(timeout: 5) {
+            field.tap()
+            field.typeText("Pâtes au thon et à la crème\nPour 2 personnes\nPréparation : 15 min\n"
+                + "Ingrédients\n200 g de pâtes\n1 boîte de thon\n20 cl de crème fraîche\n1 oignon\nSel, poivre\n"
+                + "Préparation\n1. Faites cuire les pâtes 10 min dans l'eau bouillante salée.\n"
+                + "2. Faites revenir l'oignon émincé, ajoutez le thon et la crème.\n"
+                + "3. Mélangez avec les pâtes égouttées et servez.")
+            sleep(1)
+            snapshot("25b-recette-collee")
+        }
+        let apply = element(app, "applyImport")
+        if apply.waitForExistence(timeout: 3) && apply.isEnabled { apply.tap() }
+        sleep(1)
+        snapshot("25c-recette-remplie")
+        let save = element(app, "saveMyRecipe")
+        if save.waitForExistence(timeout: 3) && save.isEnabled {
+            save.tap()
+            sleep(3)
+            snapshot("25d-ma-recette")
+            goBack(app)
+            sleep(1)
+            snapshot("25e-mes-recettes")
+        } else {
+            dump(app, "25c-enregistrer-impossible")
+        }
     }
 
     /// Passe un article en « acheté » (case à cocher, ou glissement vers la droite puis « Acheté »)

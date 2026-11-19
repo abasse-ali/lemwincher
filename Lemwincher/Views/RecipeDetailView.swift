@@ -4,7 +4,15 @@ import SwiftUI
 /// étapes, mode cuisine pas à pas et vrais prix des courses.
 struct RecipeDetailView: View {
     @Environment(AppModel.self) private var model
-    let recipe: Recipe
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openRecipe) private var openRecipe
+    /// Recette ouverte ; une des miennes est relue à chaque affichage (elle a pu être modifiée).
+    private let opened: Recipe
+    private var recipe: Recipe { model.recipe(id: opened.id) ?? opened }
+
+    init(recipe: Recipe) {
+        opened = recipe
+    }
 
     /// 0 : pas encore choisi (on prend le réglage « je cuisine d'habitude pour »).
     @State private var chosenPeople = 0
@@ -13,6 +21,11 @@ struct RecipeDetailView: View {
     @State private var prices: [String: ProductSuggestion] = [:]
     @State private var priceMissing: Set<String> = []
     @State private var pricing = false
+    /// Écrire / modifier / personnaliser (éditeur de Mes recettes).
+    @State private var editing: MyRecipeEditorRequest?
+    @State private var confirmDelete = false
+    /// Copie enregistrée depuis un autre onglet : où la retrouver.
+    @State private var savedMessage: String?
 
     private var people: Int { chosenPeople == 0 ? model.settings.defaultServings : chosenPeople }
     private var isComposed: Bool { recipe.id.hasPrefix("compose:") }
@@ -87,12 +100,77 @@ struct RecipeDetailView: View {
                     }
                     .accessibilityLabel(model.isFavorite(recipe: recipe.id) ? "Retirer des favoris" : "Ajouter aux favoris")
                 }
+                recipeMenu
             }
         }
         .fullScreenCover(isPresented: $cooking) {
             CookingModeView(recipe: recipe, people: people)
         }
+        .sheet(item: $editing) { request in
+            MyRecipeEditor(recipe: request.recipe, isNew: request.isNew) { saved in
+                guard request.isNew else { return }
+                // Nouvelle recette (copie personnalisée) : on l'ouvre dans Recettes, sinon on dit où la trouver.
+                if let openRecipe {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { openRecipe(saved.recipe) }
+                } else {
+                    savedMessage = "« \(saved.recipe.name) » est dans Mes recettes (onglet Recettes)."
+                }
+            }
+        }
+        .confirmationDialog("Supprimer « \(recipe.name) » ?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Supprimer la recette", role: .destructive) {
+                if let mine = model.myRecipe(for: recipe.id) {
+                    model.deleteMyRecipe(mine.id)
+                    dismiss()
+                }
+            }
+            Button("Annuler", role: .cancel) {}
+        } message: {
+            Text("Elle disparaît de Mes recettes, de vos favoris et du menu de la semaine.")
+        }
+        .alert("Recette enregistrée", isPresented: Binding(get: { savedMessage != nil },
+                                                          set: { if !$0 { savedMessage = nil } })) {
+            Button("OK") { savedMessage = nil }
+        } message: {
+            Text(savedMessage ?? "")
+        }
         .sensoryFeedback(.success, trigger: addedMessage)
+    }
+
+    /// « … » : modifier, dupliquer ou supprimer une de mes recettes ; personnaliser une recette de l'app.
+    private var recipeMenu: some View {
+        Menu {
+            if let mine = model.myRecipe(for: recipe.id) {
+                Button {
+                    editing = MyRecipeEditorRequest(recipe: mine, isNew: false)
+                } label: {
+                    Label("Modifier", systemImage: "pencil")
+                }
+                Button {
+                    var copy = MyRecipe(copying: recipe)
+                    copy.name = "\(recipe.name) (copie)"
+                    editing = MyRecipeEditorRequest(recipe: copy, isNew: true)
+                } label: {
+                    Label("Dupliquer", systemImage: "plus.square.on.square")
+                }
+                Button(role: .destructive) {
+                    confirmDelete = true
+                } label: {
+                    Label("Supprimer", systemImage: "trash")
+                }
+            } else {
+                Button {
+                    editing = MyRecipeEditorRequest(recipe: MyRecipe(copying: recipe), isNew: true)
+                } label: {
+                    Label(isComposed ? "Enregistrer dans mes recettes" : "Personnaliser cette recette",
+                          systemImage: "square.and.pencil")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+        }
+        .accessibilityLabel("Plus d'actions")
+        .accessibilityIdentifier("recipeMenu")
     }
 
     // MARK: En-tête
@@ -102,7 +180,7 @@ struct RecipeDetailView: View {
             HStack(alignment: .top) {
                 Text(recipe.emoji).font(.system(size: 60))
                 Spacer()
-                Text(recipe.course.singular)
+                Text(recipe.isMine ? "\(recipe.course.singular) · Ma recette" : recipe.course.singular)
                     .font(.caption.bold())
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)

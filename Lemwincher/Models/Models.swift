@@ -360,6 +360,8 @@ struct PersistedState: Codable, Equatable {
     var trackedPages: [TrackedPage] = []
     /// Produits notés à la main dans « Comparer » (vus en magasin).
     var compareEntries: [ManualCompareEntry] = []
+    /// Mes recettes (écrites ou personnalisées), la plus récente en premier.
+    var myRecipes: [MyRecipe] = []
 
     init() {}
 
@@ -375,6 +377,7 @@ struct PersistedState: Codable, Equatable {
         weekMenu = (try? c.decode([String].self, forKey: .weekMenu)) ?? []
         trackedPages = ((try? c.decode([Lossy<TrackedPage>].self, forKey: .trackedPages)) ?? []).compactMap(\.value)
         compareEntries = ((try? c.decode([Lossy<ManualCompareEntry>].self, forKey: .compareEntries)) ?? []).compactMap(\.value)
+        myRecipes = ((try? c.decode([Lossy<MyRecipe>].self, forKey: .myRecipes)) ?? []).compactMap(\.value)
     }
 }
 

@@ -28,7 +28,7 @@ enum RecipeCourse: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-enum RecipeTag: String, CaseIterable, Hashable {
+enum RecipeTag: String, CaseIterable, Hashable, Codable {
     case cheap, family, light
 
     var label: String {
@@ -108,6 +108,9 @@ struct Recipe: Identifiable, Hashable {
 
     var isQuick: Bool { minutes <= 20 }
 
+    /// Recette écrite (ou personnalisée) par l'utilisateur, dans « Mes recettes ».
+    var isMine: Bool { id.hasPrefix(MyRecipe.idPrefix) }
+
     /// Ingrédients à acheter (sans le sel, le poivre, l'huile…).
     var shoppingIngredients: [RecipeIngredient] { ingredients.filter { !$0.pantry } }
 
@@ -184,7 +187,8 @@ enum RecipeFormat {
     }
 
     static func unitLabel(_ unit: String, plural: Bool) -> String {
-        let variable: Set<String> = ["gousse", "tranche", "sachet", "boîte", "pavé", "feuille", "pincée", "brin"]
+        let variable: Set<String> = ["gousse", "tranche", "sachet", "boîte", "pavé", "feuille", "pincée", "brin",
+                                     "verre", "botte", "poignée"]
         return plural && variable.contains(unit) ? unit + "s" : unit
     }
 

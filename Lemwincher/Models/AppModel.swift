@@ -507,9 +507,51 @@ final class AppModel {
         DietFilter.allows(product, noPork: state.settings.noPork)
     }
 
-    /// Recettes compatibles avec l'alimentation choisie.
+    /// Mes recettes d'abord (toujours affichées : c'est moi qui les ai écrites), puis celles de l'app
+    /// compatibles avec l'alimentation choisie.
     var recipes: [Recipe] {
-        RecipeEngine.allowed(RecipeBook.all, noPork: state.settings.noPork, vegetarian: state.settings.vegetarian)
+        myRecipes + RecipeEngine.allowed(RecipeBook.all, noPork: state.settings.noPork, vegetarian: state.settings.vegetarian)
+    }
+
+    /// Mes recettes, la dernière modifiée en premier.
+    var myRecipes: [Recipe] {
+        state.myRecipes.sorted { $0.modified > $1.modified }.map(\.recipe)
+    }
+
+    /// Une recette par son identifiant (les miennes comprises).
+    func recipe(id: String) -> Recipe? {
+        if id.hasPrefix(MyRecipe.idPrefix) {
+            return state.myRecipes.first { $0.recipeID == id }?.recipe
+        }
+        return RecipeBook.recipe(id: id)
+    }
+
+    /// Ma recette modifiable derrière une recette affichée (nil pour les recettes de l'app).
+    func myRecipe(for recipeID: String) -> MyRecipe? {
+        state.myRecipes.first { $0.recipeID == recipeID }
+    }
+
+    /// Crée ou met à jour une de mes recettes.
+    func saveMyRecipe(_ recipe: MyRecipe) {
+        var saved = recipe
+        saved.modified = Date()
+        if let index = state.myRecipes.firstIndex(where: { $0.id == saved.id }) {
+            state.myRecipes[index] = saved
+            Log.success(.recipes, "Recette modifiée : \(saved.recipe.name)")
+        } else {
+            state.myRecipes.insert(saved, at: 0)
+            Log.success(.recipes, "Recette ajoutée à Mes recettes : \(saved.recipe.name)",
+                        details: "\(saved.ingredients.count) ingrédients · \(saved.steps.count) étapes")
+        }
+    }
+
+    /// Supprime une de mes recettes (et la retire des favoris et du menu de la semaine).
+    func deleteMyRecipe(_ id: UUID) {
+        guard let index = state.myRecipes.firstIndex(where: { $0.id == id }) else { return }
+        let removed = state.myRecipes.remove(at: index)
+        state.favoriteRecipes.removeAll { $0 == removed.recipeID }
+        state.weekMenu.removeAll { $0 == removed.recipeID }
+        Log.info(.recipes, "Recette supprimée : \(removed.recipe.name)")
     }
 
     /// Noms des articles de la liste (et des produits choisis dessous), pour savoir ce qui manque à une recette.
@@ -543,7 +585,7 @@ final class AppModel {
     /// Menu de la semaine enregistré (les recettes qui n'existent plus ou ne conviennent plus sont ignorées).
     var weekMenu: [Recipe] {
         let allowed = Set(recipes.map(\.id))
-        return state.weekMenu.compactMap { id in allowed.contains(id) ? RecipeBook.recipe(id: id) : nil }
+        return state.weekMenu.compactMap { id in allowed.contains(id) ? recipe(id: id) : nil }
     }
 
     // MARK: Articles cochés = achetés = dépenses

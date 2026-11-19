@@ -15,8 +15,9 @@ enum Backup {
         var favorites = 0
         var watched = 0
         var expenses = 0
+        var recipes = 0
 
-        var isEmpty: Bool { prices + listItems + favorites + watched + expenses == 0 }
+        var isEmpty: Bool { prices + listItems + favorites + watched + expenses + recipes == 0 }
 
         var text: String {
             if isEmpty { return "Rien de nouveau : tout était déjà dans l'app." }
@@ -26,6 +27,7 @@ enum Backup {
             if favorites > 0 { parts.append("\(favorites) magasin\(favorites > 1 ? "s" : "") favori\(favorites > 1 ? "s" : "")") }
             if watched > 0 { parts.append("\(watched) produit\(watched > 1 ? "s" : "") suivi\(watched > 1 ? "s" : "")") }
             if expenses > 0 { parts.append("\(expenses) dépense\(expenses > 1 ? "s" : "")") }
+            if recipes > 0 { parts.append("\(recipes) recette\(recipes > 1 ? "s" : "")") }
             return "Ajouté : " + parts.joined(separator: ", ") + "."
         }
     }
@@ -82,6 +84,12 @@ enum Backup {
         for expense in incoming.expenses where !expenseIDs.contains(expense.id) {
             state.expenses.append(expense)
             summary.expenses += 1
+        }
+
+        let recipeIDs = Set(state.myRecipes.map(\.id))
+        for recipe in incoming.myRecipes where !recipeIDs.contains(recipe.id) {
+            state.myRecipes.append(recipe)
+            summary.recipes += 1
         }
 
         var recentCodes = Set(state.recentProducts.map(\.code))

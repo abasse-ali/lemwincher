@@ -52,6 +52,7 @@ enum LogCategory: String, Codable, CaseIterable {
     case fuel = "Carburants"
     case network = "Réseau"
     case backup = "Sauvegarde"
+    case recipes = "Recettes"
     case account = "Compte Open Prices"
 }
 

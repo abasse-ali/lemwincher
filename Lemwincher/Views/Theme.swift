@@ -194,6 +194,8 @@ extension View {
 /// Espace de noms des transitions « zoom » (une carte de recette s'agrandit jusqu'à la recette).
 extension EnvironmentValues {
     @Entry var zoomNamespace: Namespace.ID? = nil
+    /// Ouvre une recette dans l'onglet Recettes (après l'avoir créée ou personnalisée) ; nil ailleurs.
+    @Entry var openRecipe: ((Recipe) -> Void)? = nil
 }
 
 extension View {
