@@ -28,6 +28,8 @@ struct MyRecipeEditor: View {
     @State private var steps: [StepDraft]
     @State private var showImport = false
     @State private var confirmCancel = false
+    /// Image choisie à la main : elle ne suit plus le nom de la recette.
+    @State private var emojiChosen: Bool
     @FocusState private var focus: Field?
 
     enum Field: Hashable {
@@ -69,6 +71,13 @@ struct MyRecipeEditor: View {
         _tags = State(initialValue: Set(recipe.tags))
         _ingredients = State(initialValue: recipe.ingredients.map(Self.draft(from:)))
         _steps = State(initialValue: recipe.steps.map { StepDraft(text: $0) })
+        // Nouvelle recette vierge : l'image suit le nom (« Pâtes au thon » -> 🍝) tant qu'on n'en choisit pas une.
+        _emojiChosen = State(initialValue: !(isNew && recipe.emoji == "🍽️"))
+    }
+
+    /// Image devinée d'après le nom (le plat d'abord), sinon d'après un ingrédient du nom.
+    private static func guessedEmoji(for name: String) -> String? {
+        RecipeEmoji.guess(for: name) ?? ProductEmoji.emoji(for: name)
     }
 
     private static func draft(from item: MyIngredient) -> IngredientDraft {
@@ -110,8 +119,12 @@ struct MyRecipeEditor: View {
                 stepsSection
                 if !isNew { importSection }
             }
-            .navigationTitle(isNew ? "Nouvelle recette" : "Modifier la recette")
+            .navigationTitle(isNew ? "Recette" : "Modifier")
             .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: name) { _, newName in
+                guard !emojiChosen else { return }
+                emoji = Self.guessedEmoji(for: newName) ?? "🍽️"
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Annuler") {
@@ -188,6 +201,7 @@ struct MyRecipeEditor: View {
                     ForEach(Self.emojis, id: \.self) { item in
                         Button {
                             emoji = item
+                            emojiChosen = true
                         } label: {
                             Text(item)
                                 .font(.title2)
@@ -310,7 +324,7 @@ struct MyRecipeEditor: View {
     private func apply(_ result: RecipeTextParser.Result) {
         if let parsed = result.name, name.trimmed.isEmpty {
             name = parsed
-            if emoji == "🍽️", let guess = ProductEmoji.emoji(for: parsed) { emoji = guess }
+            if !emojiChosen, let guess = Self.guessedEmoji(for: parsed) { emoji = guess }
         }
         if let people = result.servings { servings = min(max(people, 1), 12) }
         if let total = result.minutes { minutes = min(max((total + 4) / 5 * 5, 5), 600) }

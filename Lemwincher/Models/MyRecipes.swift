@@ -198,6 +198,64 @@ struct MyIngredient: Codable, Identifiable, Hashable {
     }
 }
 
+// MARK: - Image d'une recette
+
+/// Image d'une recette d'après son nom : le premier plat nommé l'emporte
+/// (« Pâtes au thon et à la crème » -> 🍝, « Crème brûlée » -> 🍮, « Gratin de pommes de terre » -> 🥘).
+enum RecipeEmoji {
+    private static let dishes: [(keys: Set<String>, emoji: String)] = [
+        (["pates", "pate", "spaghetti", "spaghettis", "tagliatelle", "tagliatelles", "penne", "lasagne", "lasagnes",
+          "macaroni", "macaronis", "coquillettes", "ravioli", "raviolis", "gnocchi", "gnocchis", "carbonara",
+          "bolognaise", "linguine"], "🍝"),
+        (["pizza", "pizzas"], "🍕"),
+        (["burger", "burgers", "hamburger", "hamburgers"], "🍔"),
+        (["sandwich", "sandwichs", "croque", "panini", "paninis"], "🥪"),
+        (["tacos", "taco", "fajitas", "quesadilla"], "🌮"),
+        (["wrap", "wraps", "burrito", "burritos"], "🌯"),
+        (["kebab", "falafel", "falafels", "chawarma", "shawarma"], "🥙"),
+        (["salade", "salades", "taboule"], "🥗"),
+        (["soupe", "veloute", "potage", "bouillon", "minestrone", "pho", "ramen"], "🍲"),
+        (["curry", "dahl", "dal", "colombo", "massala", "biryani"], "🍛"),
+        (["riz", "risotto", "sushi", "sushis"], "🍚"),
+        (["couscous", "tajine", "tagine", "paella", "gratin", "hachis", "parmentier", "moussaka", "chili",
+          "blanquette", "bourguignon", "ragout", "mijote", "cassoulet"], "🥘"),
+        (["quiche", "tarte", "tartes", "tourte", "feuillete", "clafoutis"], "🥧"),
+        (["omelette", "oeuf", "oeufs", "brouilles"], "🍳"),
+        (["crepe", "crepes", "pancake", "pancakes", "galette", "galettes"], "🥞"),
+        (["gaufre", "gaufres"], "🧇"),
+        (["gateau", "gateaux", "cake", "fondant", "brownie", "brownies", "moelleux", "tiramisu", "charlotte",
+          "cheesecake", "muffin", "muffins", "madeleines"], "🍰"),
+        (["cookie", "cookies", "biscuit", "biscuits", "sable", "sables"], "🍪"),
+        (["creme", "mousse", "flan", "panna", "entremets"], "🍮"),
+        (["chocolat"], "🍫"),
+        (["poulet", "dinde", "volaille", "pilons", "cuisses"], "🍗"),
+        (["boeuf", "steak", "steaks", "entrecote", "roti", "veau"], "🥩"),
+        (["agneau", "gigot", "brochettes"], "🍖"),
+        (["saumon", "cabillaud", "thon", "poisson", "colin", "merlu", "dorade", "sardines", "truite", "lieu"], "🐟"),
+        (["crevette", "crevettes", "moules", "gambas", "calamars"], "🦐"),
+        (["frites", "patates", "puree"], "🥔"),
+        (["legumes", "ratatouille", "courgette", "courgettes", "brocoli", "brocolis", "poelee"], "🥦"),
+        (["champignon", "champignons"], "🍄"),
+        (["pain", "brioche", "baguette"], "🥐"),
+        (["smoothie", "milkshake", "jus", "limonade"], "🥤"),
+        (["fraise", "fraises"], "🍓"),
+        (["citron"], "🍋"),
+        (["pomme", "pommes", "compote"], "🍎"),
+    ]
+
+    static func guess(for name: String) -> String? {
+        let tokens = SuggestionEngine.tokens(name)
+        for (index, token) in tokens.enumerated() {
+            // « pommes de terre » : la pomme de terre, pas la pomme.
+            if token.hasPrefix("pomme"), tokens.dropFirst(index + 1).prefix(2).elementsEqual(["de", "terre"]) {
+                return "🥔"
+            }
+            if let dish = dishes.first(where: { $0.keys.contains(token) }) { return dish.emoji }
+        }
+        return nil
+    }
+}
+
 // MARK: - Recette collée (texte d'un site, d'une note…)
 
 /// Lit une recette copiée : nom, nombre de personnes, durée, ingrédients (« 200 g de farine », « 2 œufs »,

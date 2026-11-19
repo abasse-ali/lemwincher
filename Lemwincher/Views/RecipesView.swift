@@ -16,6 +16,8 @@ struct RecipesView: View {
     @Namespace private var zoom
     /// Écrire une nouvelle recette (« + » ou carte « Créez vos recettes »).
     @State private var editing: MyRecipeEditorRequest?
+    /// Recette enregistrée, ouverte une fois la feuille de l'éditeur fermée.
+    @State private var savedRecipe: Recipe?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -56,10 +58,16 @@ struct RecipesView: View {
                 RecipeDetailView(recipe: entry.recipe)
                     .zoomDestination(entry.source, in: zoom)
             }
-            .sheet(item: $editing) { request in
+            // La recette enregistrée s'ouvre une fois la feuille fermée (pendant la fermeture,
+            // iOS 26 ignore l'ouverture d'un écran).
+            .sheet(item: $editing, onDismiss: {
+                if let recipe = savedRecipe {
+                    savedRecipe = nil
+                    path.append(recipe)
+                }
+            }) { request in
                 MyRecipeEditor(recipe: request.recipe, isNew: request.isNew) { saved in
-                    // La recette s'ouvre une fois la feuille fermée.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { path.append(saved.recipe) }
+                    savedRecipe = saved.recipe
                 }
             }
         }

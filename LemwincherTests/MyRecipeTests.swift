@@ -162,6 +162,16 @@ final class MyRecipeTests: XCTestCase {
                                       "Versez dans un moule beurré et faites cuire 35 min."])
     }
 
+    func testRecipeImageFollowsTheDish() {
+        XCTAssertEqual(RecipeEmoji.guess(for: "Pâtes au thon et à la crème"), "🍝", "le plat d'abord, pas la crème")
+        XCTAssertEqual(RecipeEmoji.guess(for: "Crème brûlée"), "🍮")
+        XCTAssertEqual(RecipeEmoji.guess(for: "Gratin de pommes de terre"), "🥘")
+        XCTAssertEqual(RecipeEmoji.guess(for: "Pommes de terre sautées"), "🥔")
+        XCTAssertEqual(RecipeEmoji.guess(for: "Tarte aux pommes"), "🥧")
+        XCTAssertEqual(RecipeEmoji.guess(for: "Saumon grillé"), "🐟")
+        XCTAssertNil(RecipeEmoji.guess(for: "Recette de mamie"))
+    }
+
     func testIngredientLines() {
         func read(_ line: String) -> (String, Double?, String, Bool)? {
             RecipeTextParser.ingredient(from: line).map { ($0.name, $0.quantity, $0.unit, $0.pantry) }

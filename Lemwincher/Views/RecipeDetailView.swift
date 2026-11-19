@@ -26,6 +26,8 @@ struct RecipeDetailView: View {
     @State private var confirmDelete = false
     /// Copie enregistrée depuis un autre onglet : où la retrouver.
     @State private var savedMessage: String?
+    /// Copie enregistrée, ouverte une fois la feuille de l'éditeur fermée.
+    @State private var savedCopy: Recipe?
 
     private var people: Int { chosenPeople == 0 ? model.settings.defaultServings : chosenPeople }
     private var isComposed: Bool { recipe.id.hasPrefix("compose:") }
@@ -106,15 +108,18 @@ struct RecipeDetailView: View {
         .fullScreenCover(isPresented: $cooking) {
             CookingModeView(recipe: recipe, people: people)
         }
-        .sheet(item: $editing) { request in
+        .sheet(item: $editing, onDismiss: {
+            // Nouvelle recette (copie personnalisée) : on l'ouvre dans Recettes, sinon on dit où la trouver.
+            guard let copy = savedCopy else { return }
+            savedCopy = nil
+            if let openRecipe {
+                openRecipe(copy)
+            } else {
+                savedMessage = "« \(copy.name) » est dans Mes recettes (onglet Recettes)."
+            }
+        }) { request in
             MyRecipeEditor(recipe: request.recipe, isNew: request.isNew) { saved in
-                guard request.isNew else { return }
-                // Nouvelle recette (copie personnalisée) : on l'ouvre dans Recettes, sinon on dit où la trouver.
-                if let openRecipe {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { openRecipe(saved.recipe) }
-                } else {
-                    savedMessage = "« \(saved.recipe.name) » est dans Mes recettes (onglet Recettes)."
-                }
+                if request.isNew { savedCopy = saved.recipe }
             }
         }
         .confirmationDialog("Supprimer « \(recipe.name) » ?", isPresented: $confirmDelete, titleVisibility: .visible) {
