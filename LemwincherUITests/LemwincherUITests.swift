@@ -295,6 +295,11 @@ final class LemwincherUITests: XCTestCase {
         // Comparer le rapport quantité/prix : 10 steaks à 7,99 € ou 2 steaks à 3,99 € ?
         let compare = element(app, "compareLink")
         scrollDown(until: compare, in: app)
+        // Défilé trop loin : la carte passe sous la barre de titre (présente mais pas touchable).
+        for _ in 0..<2 where compare.exists && !compare.isHittable {
+            app.swipeDown()
+            sleep(1)
+        }
         if compare.waitForExistence(timeout: 5) && compare.isHittable {
             compare.tap()
             sleep(2)
