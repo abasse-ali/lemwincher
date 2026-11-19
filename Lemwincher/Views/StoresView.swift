@@ -216,6 +216,7 @@ struct StoresView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .contentMargins(.top, 12, for: .scrollContent)
         .refreshable {
             await model.refreshStores()
             await model.refreshFuel(force: true)

@@ -87,6 +87,27 @@ final class LemwincherUITests: XCTestCase {
         sleep(1)
     }
 
+    /// Ferme la recherche : « Annuler » (iOS 18) ou le rond ✕ en verre (iOS 26), sinon vide le champ.
+    private func dismissSearch(_ app: XCUIApplication) {
+        for label in ["Annuler", "Cancel", "Fermer", "Close", "Effacer la recherche"] {
+            let button = app.buttons[label].firstMatch
+            if button.exists && button.isHittable {
+                button.tap()
+                sleep(1)
+                return
+            }
+        }
+        let field = app.searchFields.firstMatch
+        if field.exists {
+            field.tap()
+            if let text = field.value as? String, !text.isEmpty, text != field.placeholderValue {
+                field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: text.count + 2))
+            }
+            field.typeText("\n")
+        }
+        sleep(1)
+    }
+
     private func goBack(_ app: XCUIApplication) {
         let back = app.navigationBars.buttons.firstMatch
         if back.exists { back.tap() }
@@ -292,9 +313,7 @@ final class LemwincherUITests: XCTestCase {
             sleep(4)
             snapshot("12c-recherche-plus-de-produits")
             // Quitter la recherche : le clavier cache la barre d'onglets.
-            let cancel = app.buttons["Annuler"].firstMatch
-            if cancel.exists { cancel.tap() } else { app.buttons["Cancel"].firstMatch.tap() }
-            sleep(1)
+            dismissSearch(app)
         }
 
         // Comparer le rapport quantité/prix : 10 steaks à 7,99 € ou 2 steaks à 3,99 € ?
@@ -646,8 +665,7 @@ final class LemwincherUITests: XCTestCase {
             // Deuxième toucher sur l'onglet : retour à l'écran principal de Produits (rayons, mes rayons en ligne).
             app.tabBars.buttons["Produits"].tap()
             sleep(2)
-            let cancelSearch = app.buttons["Annuler"].firstMatch
-            if cancelSearch.exists && cancelSearch.isHittable { cancelSearch.tap() }
+            if app.keyboards.firstMatch.exists { dismissSearch(app) }
             let tracked = element(app, "trackedPageRow")
             reveal(tracked, in: app, swipes: 10)
             if !tracked.exists { dump(app, "19d-rayons-introuvables") }

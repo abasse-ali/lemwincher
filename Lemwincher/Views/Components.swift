@@ -212,10 +212,13 @@ struct OpenStatusLabel: View {
     var body: some View {
         let now = Date()
         let open = hours.status(at: now).isOpen
-        Label(hours.statusText(at: now), systemImage: "clock")
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(open ? Color.brand : Color.red)
-            .lineLimit(1)
+        HStack(spacing: 3) {
+            Image(systemName: "clock")
+            Text(hours.statusText(at: now))
+        }
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(open ? Color.brand : Color.red)
+        .lineLimit(1)
     }
 }
 
@@ -774,9 +777,13 @@ struct StoreRow: View {
                         ChainIndexBadge(entry: entry)
                     }
                     if let count = store.priceCount, count > 0 {
-                        Label("\(count) prix", systemImage: "tag.fill")
-                            .font(.caption2)
-                            .foregroundStyle(Color.brand)
+                        // Icône collée au texte (un Label de liste réserve une large colonne d'icône).
+                        HStack(spacing: 3) {
+                            Image(systemName: "tag.fill")
+                            Text("\(count) prix")
+                        }
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Color.brand)
                     }
                 }
             }

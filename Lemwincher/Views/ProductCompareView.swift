@@ -66,14 +66,14 @@ struct ProductCompareView: View {
         let otherEstimates = estimates.filter { nearby[$0.key] == nil }
 
         List {
-            // Rappel en cours, porc, gélatine, additifs, promos relevées… ou « aucun rappel en cours ».
-            ProductAlertsSection(product: product, facts: facts,
-                                 observations: local + model.myObservations(productCode: product.code))
-
             Section {
                 productHero(best: rows.first)
                     .clearListRow(top: 2, bottom: 6)
             }
+
+            // Rappel en cours, porc, gélatine, additifs, promos relevées… ou « aucun rappel en cours ».
+            ProductAlertsSection(product: product, facts: facts,
+                                 observations: local + model.myObservations(productCode: product.code))
 
             Section {
                 if let generic = facts?.genericName {
