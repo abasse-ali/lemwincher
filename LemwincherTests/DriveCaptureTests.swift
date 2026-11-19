@@ -79,6 +79,32 @@ final class DriveCaptureTests: XCTestCase {
                        "sans marque ni contenance : le produit sans code-barres habituel")
     }
 
+    func testTwinProductsAreKeptAndNamed() {
+        // Aldi : deux « Yaourt à boire » Milsani, même prix et même contenance, mais deux fiches (fraise, framboise).
+        let json = """
+        [
+          {"name": "YAOURT À BOIRE", "price": 1.99, "brand": "MILSANI®", "quantity": "1.08 kg",
+           "image": "https://prd.an-pcm.com/dam/x/5024835.main.1.fr_fr.All.YAOURT_A_BOIRE_SAVEUR_FRAMBOISE_MILSANI-WEB.png?quality=95",
+           "link": "https://www.aldi.fr/fiches-produits/yaourt-a-boire-5024835.html"},
+          {"name": "YAOURT À BOIRE", "price": 1.99, "brand": "MILSANI®", "quantity": "1.08 kg",
+           "image": "https://prd.an-pcm.com/dam/x/5024832.main.1.fr_fr.All.YAOURT_A_BOIRE_SAVEUR_FRAISE_MILSANI-WEB.png?quality=95",
+           "link": "https://www.aldi.fr/fiches-produits/yaourt-a-boire-5024832.html"},
+          {"name": "Boudoirs", "price": 1.40, "link": "https://www.e.leclerc/fp/boudoirs-3564700009512"},
+          {"name": "Boudoirs", "price": 1.40, "link": "https://www.e.leclerc/fp/boudoirs-3564700009999"},
+          {"name": "Boudoirs", "price": 1.40, "link": "https://www.e.leclerc/fp/boudoirs-3564700009999"}
+        ]
+        """
+        let items = DriveCaptureParser.parse(json)
+        XCTAssertEqual(items.map(\.name), ["Yaourt à boire framboise", "Yaourt à boire fraise",
+                                           "Boudoirs (réf. 3564700009512)", "Boudoirs (réf. 3564700009999)"],
+                       "la même fiche lue deux fois n'est gardée qu'une fois")
+        XCTAssertNotEqual(items[0].product.code, items[1].product.code, "fraise et framboise : deux produits")
+        XCTAssertEqual(Set(items.map(\.id)).count, items.count)
+        XCTAssertEqual(DriveCaptureParser.reference(in: "https://www.aldi.fr/fiches-produits/yaourt-a-boire-5024835.html"),
+                       "5024835")
+        XCTAssertNil(DriveCaptureParser.reference(in: nil))
+    }
+
     func testLeclercOpensLeclercDrive() throws {
         let leclerc = try XCTUnwrap(DriveSite.all.first { $0.id == "leclerc" })
         XCTAssertEqual(leclerc.url(for: "œufs")?.absoluteString, "https://www.leclercdrive.fr",
@@ -146,6 +172,9 @@ final class DriveCaptureTests: XCTestCase {
         XCTAssertTrue(DriveCaptureParser.script.hasSuffix("return JSON.stringify(out);\n})();"))
         XCTAssertTrue(DriveCaptureParser.functions.contains("loadMoreButton"), "« Voir plus »")
         XCTAssertTrue(DriveCaptureParser.functions.contains("nextPage"), "pages suivantes")
+        XCTAssertTrue(DriveCaptureParser.functions.contains("function fromGrid"), "grilles sans classes connues")
+        XCTAssertTrue(DriveCaptureParser.fullScript.contains("noPrice: noPrice"), "produits sans prix signalés")
+        XCTAssertTrue(DriveCaptureParser.structureScript.hasSuffix("})();"))
     }
 
     func testSentenceCase() {

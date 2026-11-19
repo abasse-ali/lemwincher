@@ -7,6 +7,8 @@ final class CaptureSession: NSObject, ObservableObject, WKScriptMessageHandler, 
     let webView: WKWebView
     @Published var running = false
     @Published var count = 0
+    /// Produits affichés sans prix sur la page lue (indisponibles, prix en magasin…).
+    @Published var withoutPrice: [String] = []
 
     /// `viewport` : taille de la page pour une lecture invisible (mise à jour automatique des rayons suivis).
     init(viewport: CGRect = .zero) {
@@ -82,6 +84,7 @@ final class CaptureSession: NSObject, ObservableObject, WKScriptMessageHandler, 
         token += 1
         let current = token
         count = 0
+        withoutPrice = []
         running = true
         onDone = { [weak self] json in
             guard let self, self.token == current, self.running else { return }
@@ -120,7 +123,18 @@ final class CaptureSession: NSObject, ObservableObject, WKScriptMessageHandler, 
             DispatchQueue.main.async { self.count = count }
         }
         if let json = body["done"] as? String {
-            DispatchQueue.main.async { self.onDone?(json) }
+            let names = (body["noPrice"] as? [Any])?.compactMap { ($0 as? String)?.nilIfBlank } ?? []
+            DispatchQueue.main.async {
+                self.withoutPrice = Array(names.prefix(50))
+                self.onDone?(json)
+            }
+        }
+    }
+
+    /// Structure de la page autour des premiers prix (pour le journal, quand presque rien n'a été lu).
+    func describePage(completion: @escaping (String?) -> Void) {
+        webView.evaluateJavaScript(DriveCaptureParser.structureScript) { result, _ in
+            completion((result as? String)?.nilIfBlank)
         }
     }
 }
@@ -160,6 +174,8 @@ struct DriveCaptureView: View {
         let items: [CapturedPrice]
         let site: DriveSite
         let store: Store?
+        /// Produits affichés sans prix sur la page.
+        var withoutPrice: [String] = []
         /// Page lue (rayon, recherche) : gardée en mémoire pour être relue automatiquement.
         let pageURL: URL?
         let pageTitle: String?
@@ -277,6 +293,7 @@ struct DriveCaptureView: View {
             }
             .sheet(item: $review) { batch in
                 CaptureReviewView(items: batch.items, site: batch.site, preferredStore: batch.store,
+                                  withoutPrice: batch.withoutPrice,
                                   pageURL: batch.pageURL, pageTitle: batch.pageTitle) {
                     dismiss()
                 }
@@ -364,15 +381,27 @@ struct DriveCaptureView: View {
         message = nil
         session.start(script: DriveCaptureParser.fullScript) { json in
             let found = DriveCaptureParser.parse(json)
+            let withoutPrice = session.withoutPrice
+            let page = Log.describe(session.webView.url)
+            if found.count <= 2 {
+                // Presque rien de lu : la structure de la page, pour comprendre (à partager depuis le journal).
+                session.describePage { structure in
+                    let summary = found.isEmpty ? "aucun prix lisible sur la page" : "seulement \(found.count) prix lus"
+                    Log.warning(.sites, "Site \(site.name) : \(summary)",
+                                details: [Fmt.join(session.webView.title, page),
+                                          found.isEmpty ? "Réponse du script : \(String(json.prefix(200)))"
+                                                        : "Lu : " + found.map { "\($0.name) \(Fmt.price($0.price, model.settings.currency))" }.joined(separator: " ; "),
+                                          structure].compactMap { $0 }.joined(separator: "\n"))
+                }
+            } else {
+                Log.info(.sites, "Site \(site.name) : \(found.count) prix lus"
+                            + (withoutPrice.isEmpty ? "" : " · \(withoutPrice.count) sans prix"),
+                         details: withoutPrice.isEmpty ? page : page + "\nSans prix : " + withoutPrice.joined(separator: ", "))
+            }
             if found.isEmpty {
                 message = "Aucun prix lisible sur cette page. Ouvrez un rayon ou une recherche (choisissez votre magasin si le site le demande), puis réessayez."
-                Log.warning(.sites, "Site \(site.name) : aucun prix lisible sur la page",
-                            details: Fmt.join(session.webView.title, Log.describe(session.webView.url))
-                                + "\nRéponse du script : \(String(json.prefix(200)))")
             } else {
-                Log.info(.sites, "Site \(site.name) : \(found.count) prix lus",
-                         details: Log.describe(session.webView.url))
-                review = CaptureBatch(items: found, site: site, store: store,
+                review = CaptureBatch(items: found, site: site, store: store, withoutPrice: withoutPrice,
                                       pageURL: session.webView.url, pageTitle: session.webView.title)
             }
         }
@@ -388,6 +417,8 @@ struct CaptureReviewView: View {
     let site: DriveSite
     /// Magasin d'où l'on a ouvert le site (carte, fiche) : choisi d'office.
     let preferredStore: Store?
+    /// Produits affichés sans prix sur la page (indisponibles, prix en magasin…).
+    let withoutPrice: [String]
     let pageURL: URL?
     let pageTitle: String?
     let onSaved: () -> Void
@@ -398,11 +429,12 @@ struct CaptureReviewView: View {
     /// Garder ce rayon en mémoire et le relire automatiquement.
     @State private var track = true
 
-    init(items: [CapturedPrice], site: DriveSite, preferredStore: Store? = nil, pageURL: URL? = nil,
-         pageTitle: String? = nil, onSaved: @escaping () -> Void) {
+    init(items: [CapturedPrice], site: DriveSite, preferredStore: Store? = nil, withoutPrice: [String] = [],
+         pageURL: URL? = nil, pageTitle: String? = nil, onSaved: @escaping () -> Void) {
         _items = State(initialValue: items)
         self.site = site
         self.preferredStore = preferredStore
+        self.withoutPrice = withoutPrice
         self.pageURL = pageURL
         self.pageTitle = pageTitle
         self.onSaved = onSaved
@@ -500,6 +532,19 @@ struct CaptureReviewView: View {
                     }
                 } footer: {
                     Text("Décochez ce qui ne correspond pas. Les prix sont ajoutés à « Mes prix » pour votre usage personnel ; ils ne sont pas partagés sur Open Prices.")
+                }
+
+                if !withoutPrice.isEmpty {
+                    Section {
+                        ForEach(withoutPrice, id: \.self) { name in
+                            Label(DriveCaptureParser.sentenceCase(name), systemImage: "tag.slash")
+                                .foregroundStyle(.secondary)
+                        }
+                    } header: {
+                        Text("Sans prix sur le site (\(withoutPrice.count))")
+                    } footer: {
+                        Text("Ces produits sont affichés sans prix sur la page (indisponibles, ou prix donné seulement en magasin) : ils ne peuvent pas être ajoutés.")
+                    }
                 }
             }
             .navigationTitle("Prix capturés")

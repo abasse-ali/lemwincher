@@ -373,7 +373,9 @@ struct FlowLayout: Layout {
                 y += rowHeight + spacing
                 rowHeight = 0
             }
-            view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            // Taille idéale (mesurée de même) : une taille exacte arrondie peut faire tronquer ou
+            // replier le contenu (sur iOS 27, une étiquette n'affichait plus que son icône).
+            view.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: .unspecified)
             x += size.width + spacing
             rowHeight = max(rowHeight, size.height)
         }

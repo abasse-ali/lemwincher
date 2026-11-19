@@ -124,6 +124,9 @@ struct RecipeDetailView: View {
                     Label("Sans porc", systemImage: "checkmark.seal.fill")
                 }
             }
+            // iOS 27 : sans style explicite, une étiquette dans une mise en page libre n'affichait que son icône.
+            .labelStyle(.titleAndIcon)
+            .lineLimit(1)
             .font(.caption.weight(.semibold))
             .padding(.top, 2)
         }
