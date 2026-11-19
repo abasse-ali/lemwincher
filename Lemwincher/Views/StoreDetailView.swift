@@ -27,39 +27,81 @@ struct StoreDetailView: View {
         let observations = self.observations
         let favorite = model.isFavorite(store)
         List {
+            // En-tête façon Plans : carte arrondie, cartouche en verre (logo, nom, adresse), actions en verre.
             Section {
-                Map(initialPosition: .region(MKCoordinateRegion(center: store.coordinate,
-                                                                 latitudinalMeters: 700,
-                                                                 longitudinalMeters: 700))) {
-                    if let style = ChainStyle.forChain(store.chainKey) {
-                        Marker(store.name, monogram: Text(style.monogram), coordinate: store.coordinate)
-                            .tint(Color(chain: style))
+                ZStack(alignment: .bottomLeading) {
+                    Map(initialPosition: .region(MKCoordinateRegion(center: store.coordinate,
+                                                                     latitudinalMeters: 700,
+                                                                     longitudinalMeters: 700))) {
+                        if let style = ChainStyle.forChain(store.chainKey) {
+                            Marker(store.name, monogram: Text(style.monogram), coordinate: store.coordinate)
+                                .tint(Color(chain: style))
+                        }
+                        if ChainStyle.forChain(store.chainKey) == nil {
+                            Marker(store.name, systemImage: "cart.fill", coordinate: store.coordinate)
+                                .tint(Color.brand)
+                        }
+                        UserAnnotation()
                     }
-                    if ChainStyle.forChain(store.chainKey) == nil {
-                        Marker(store.name, systemImage: "cart.fill", coordinate: store.coordinate)
+                    .frame(height: 240)
+                    .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+
+                    HStack(alignment: .center, spacing: 12) {
+                        StoreLogo(url: store.displayLogoURL, size: 48, chainKey: store.chainKey)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(store.name)
+                                .font(.headline)
+                                .lineLimit(2)
+                            if let address = store.address {
+                                Text(address)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            if let distance = store.distance(from: model.referenceLocation) {
+                                Label("À \(Fmt.distance(distance))", systemImage: "location.fill")
+                                    .labelStyle(.titleAndIcon)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Color.brand)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(12)
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .padding(10)
+                }
+                .clearListRow(top: 2, bottom: 8)
+
+                GlassEffectContainer(spacing: 10) {
+                    HStack(spacing: 10) {
+                        if let url = store.directionsURL {
+                            Link(destination: url) {
+                                ActionTileLabel(title: "Itinéraire", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                            }
+                            .buttonStyle(.glassProminent)
                             .tint(Color.brand)
-                    }
-                    UserAnnotation()
-                }
-                .frame(height: 180)
-                .listRowInsets(EdgeInsets())
-
-                HStack(alignment: .top, spacing: 12) {
-                    StoreLogo(url: store.displayLogoURL, size: 48, chainKey: store.chainKey)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(store.name).font(.title2.bold())
-                        if let address = store.address {
-                            Text(address).foregroundStyle(.secondary)
                         }
-                        if let distance = store.distance(from: model.referenceLocation) {
-                            Label("À \(Fmt.distance(distance))", systemImage: "location")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                        if let phone = store.phoneURL {
+                            Link(destination: phone) {
+                                ActionTileLabel(title: "Appeler", systemImage: "phone.fill")
+                            }
+                            .buttonStyle(.glass)
                         }
+                        Button {
+                            model.toggleFavorite(store)
+                        } label: {
+                            ActionTileLabel(title: favorite ? "Mon magasin" : "Favori",
+                                            systemImage: favorite ? "star.fill" : "star")
+                        }
+                        .buttonStyle(.glass)
+                        .accessibilityLabel(favorite ? "Retirer de mes magasins" : "Ajouter à mes magasins")
                     }
                 }
-                .padding(.vertical, 4)
+                .clearListRow(top: 0, bottom: 4)
+            }
 
+            Section {
                 if let chainName = store.chainName {
                     HStack {
                         Label("Enseigne : \(chainName)", systemImage: "building.2")
@@ -72,16 +114,6 @@ struct StoreDetailView: View {
 
                 StoreSiteButtons(store: store, request: $browser)
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                if let url = store.directionsURL {
-                    Link(destination: url) {
-                        Label("Itinéraire avec Plans", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
-                    }
-                }
-                if let phone = store.phoneURL {
-                    Link(destination: phone) {
-                        Label("Appeler le magasin", systemImage: "phone.fill")
-                    }
-                }
                 // Site propre du magasin (en plus de celui de l'enseigne), ouvert dans l'app pour en lire les prix.
                 if let website = store.websiteURL, DriveSite.forStore(store) != nil {
                     Button {
@@ -89,12 +121,6 @@ struct StoreDetailView: View {
                     } label: {
                         Label("Site du magasin", systemImage: "safari")
                     }
-                }
-                Button {
-                    model.toggleFavorite(store)
-                } label: {
-                    Label(favorite ? "Retirer de mes magasins" : "Ajouter à mes magasins",
-                          systemImage: favorite ? "star.slash" : "star")
                 }
                 Button {
                     showAddPrice = true

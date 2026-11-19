@@ -71,7 +71,11 @@ struct ProductCompareView: View {
                                  observations: local + model.myObservations(productCode: product.code))
 
             Section {
-                productHeader
+                productHero(best: rows.first)
+                    .clearListRow(top: 2, bottom: 6)
+            }
+
+            Section {
                 if let generic = facts?.genericName {
                     Text(generic)
                         .font(.subheadline)
@@ -227,25 +231,47 @@ struct ProductCompareView: View {
 
     // MARK: Sections
 
-    private var productHeader: some View {
-        HStack(alignment: .top, spacing: 14) {
-            ProductThumb(url: product.imageURL, size: 84, name: product.name)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(product.name).font(.title3.bold())
-                if let brand = product.brand {
-                    Text(brand).foregroundStyle(.secondary)
-                }
-                if let quantity = product.quantity {
-                    Text(quantity).font(.subheadline).foregroundStyle(.secondary)
+    /// En-tête : grande photo, nom, marque et contenance, et le meilleur prix relevé autour de vous.
+    private func productHero(best: PriceObservation?) -> some View {
+        VStack(spacing: 14) {
+            ProductThumb(url: product.imageURL, size: 168, name: product.name)
+                .shadow(color: .black.opacity(0.16), radius: 18, y: 10)
+            VStack(spacing: 4) {
+                Text(product.name)
+                    .font(.title2.bold())
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                let details = Fmt.join(product.brand, product.quantity)
+                if !details.isEmpty {
+                    Text(details)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
                 if !product.isCustom {
                     Label(product.code, systemImage: "barcode")
+                        .labelStyle(.titleAndIcon)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
+            if let best {
+                HStack(spacing: 6) {
+                    Image(systemName: "tag.fill")
+                    Text(Fmt.price(best.price, best.currency)).fontWeight(.bold).monospacedDigit()
+                    Text("chez \(best.storeName)").lineLimit(1)
+                }
+                .font(.subheadline)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .glassEffect(.regular.tint(Color.brand.opacity(0.4)), in: Capsule())
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Meilleur prix autour de vous : \(Fmt.price(best.price, best.currency)) chez \(best.storeName)")
+            }
         }
-        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
     }
 
     private var actionButtons: some View {

@@ -99,7 +99,10 @@ struct HeroCard<Content: View>: View {
             .foregroundStyle(.white)
             .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(BrandMesh(tint: tint), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .background {
+                BrandMesh(tint: tint)
+                    .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            }
             .overlay(
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
                     .strokeBorder(.white.opacity(0.18), lineWidth: 1)
