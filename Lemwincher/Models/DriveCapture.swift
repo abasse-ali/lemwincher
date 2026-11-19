@@ -225,8 +225,9 @@ enum DriveCaptureParser {
     /// « …/yaourt-a-boire-5024835.html » → « 5024835 ».
     static func reference(in link: String?) -> String? {
         guard let link, let path = URL(string: link)?.path else { return nil }
-        let runs = path.split { !$0.isNumber }.filter { $0.count >= 4 }
-        return runs.last.map(String.init)
+        let runs: [Substring] = path.split { !$0.isNumber }.filter { $0.count >= 4 }
+        guard let last = runs.last else { return nil }
+        return String(last)
     }
 
     /// "BEURRE DOUX" -> "Beurre doux" (les noms tout en majuscules seulement).
