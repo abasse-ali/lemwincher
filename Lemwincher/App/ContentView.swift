@@ -25,7 +25,8 @@ struct ContentView: View {
                 BudgetView()
             }
         }
-        .tabBarMinimizeBehavior(.onScrollDown)
+        // Pas pendant les tests d'interface : la barre rétractée ne montre plus que l'onglet en cours.
+        .tabBarMinimizeBehavior(model.isUITest ? .never : .onScrollDown)
         // Apparence choisie dans les Réglages (sinon celle de l'iPhone).
         .preferredColorScheme(model.settings.appearance.colorScheme)
         // Réglages : roue dentée ⚙︎ en haut des écrans (5 onglets tiennent sur l'iPhone sans « Plus »).

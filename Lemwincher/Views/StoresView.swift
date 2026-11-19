@@ -13,6 +13,8 @@ struct StoresView: View {
     @State private var path = NavigationPath()
     /// Magasin touché sur la carte : sa fiche rapide s'ouvre en bas de l'écran.
     @State private var selectedStoreID: String?
+    /// Relie le bouton « Ma position » (posé sur la carte) à la carte.
+    @Namespace private var mapScope
 
     private var selectedStore: Binding<Store?> {
         Binding(get: { selectedStoreID.flatMap { id in model.knownStores.first { $0.id == id } } },
@@ -26,11 +28,13 @@ struct StoresView: View {
                 if model.referenceLocation == nil {
                     LocationNeededView()
                 } else {
+                    // La carte commence en haut de l'écran, sous la barre en verre ; la liste suit.
                     VStack(spacing: 0) {
                         map
                         storeList(supermarketsOnly: $bindable.state.settings.supermarketsOnly,
                                   openNowOnly: $bindable.state.settings.openNowOnly)
                     }
+                    .ignoresSafeArea(edges: .top)
                 }
             }
             .navigationTitle("Autour de moi")
@@ -78,7 +82,7 @@ struct StoresView: View {
 
     private var map: some View {
         // Toucher un magasin : fiche rapide avec son site (rayons et prix), l'itinéraire et la fiche complète.
-        Map(position: $camera, selection: $selectedStoreID) {
+        Map(position: $camera, selection: $selectedStoreID, scope: mapScope) {
             UserAnnotation()
             if model.settings.useHome, let home = model.settings.home {
                 Marker("Domicile", systemImage: "house.fill", coordinate: home.coordinate)
@@ -88,14 +92,20 @@ struct StoresView: View {
                 storeMarker(store)
             }
         }
-        // Commandes de Plans en verre (iOS 26) : ma position, boussole.
-        .mapControls {
-            MapUserLocationButton()
-            MapCompass()
+        // Sous la barre du haut : un voile pour que le titre et les boutons restent lisibles.
+        .overlay(alignment: .top) {
+            LinearGradient(colors: [Color(.systemBackground).opacity(0.75), Color(.systemBackground).opacity(0)],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(height: 130)
+                .allowsHitTesting(false)
         }
-        .frame(height: 270)
-        // La carte passe sous la barre du haut, en verre.
-        .ignoresSafeArea(edges: .top)
+        // « Ma position », en bas à droite de la carte (hors de la barre du haut).
+        .overlay(alignment: .bottomTrailing) {
+            MapUserLocationButton(scope: mapScope)
+                .padding(12)
+        }
+        .mapScope(mapScope)
+        .frame(height: 330)
     }
 
     /// Épingle d'un magasin : l'initiale de l'enseigne sur sa couleur (« E » bleu pour Leclerc),
