@@ -241,6 +241,18 @@ final class LemwincherUITests: XCTestCase {
             dump(app, "08a-classement-introuvable")
         }
 
+        // Recherche d'un supermarché sur la carte (magasins connus, puis Plans).
+        let storeSearch = app.textFields["storeSearchField"]
+        if storeSearch.waitForExistence(timeout: 5) && storeSearch.isHittable {
+            storeSearch.tap()
+            storeSearch.typeText("carrefour\n")
+            sleep(5)
+            snapshot("01b-recherche-magasins")
+            let clear = app.buttons["Effacer la recherche"].firstMatch
+            if clear.exists { clear.tap() }
+            sleep(2)
+        }
+
         // Liste des magasins et fiche d'un magasin.
         app.swipeUp()
         sleep(1)
@@ -443,6 +455,15 @@ final class LemwincherUITests: XCTestCase {
             myPrices.tap()
             sleep(2)
             snapshot("17-mes-prix")
+            // Un relevé ouvre la fiche du produit, qui doit rester ouverte (elle revenait en arrière).
+            let firstEntry = app.collectionViews.firstMatch.cells.element(boundBy: 5)
+            if firstEntry.waitForExistence(timeout: 3) && firstEntry.isHittable {
+                firstEntry.tap()
+                sleep(5)
+                snapshot("17b-mes-prix-produit")
+                if !app.navigationBars["Comparatif"].exists { dump(app, "17b-fiche-refermee") }
+                goBack(app)
+            }
             goBack(app)
         }
 

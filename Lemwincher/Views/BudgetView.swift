@@ -1,6 +1,11 @@
 import SwiftUI
 import Charts
 
+/// Écrans ouverts depuis l'onglet Budget.
+enum BudgetRoute: Hashable {
+    case myPrices
+}
+
 /// Onglet "Budget" : budget courses du mois, dépenses, conseils, et mes relevés de prix.
 struct BudgetView: View {
     @Environment(AppModel.self) private var model
@@ -65,9 +70,9 @@ struct BudgetView: View {
                 historySection(currency: currency)
 
                 Section {
-                    NavigationLink {
-                        MyPricesContent()
-                    } label: {
+                    // Lien « par valeur » : les fiches produit ouvertes depuis Mes prix restent ouvertes
+                    // (avec un lien « par vue », la pile revenait en arrière quand la fiche mettait l'app à jour).
+                    NavigationLink(value: BudgetRoute.myPrices) {
                         HStack {
                             Label("Mes relevés de prix", systemImage: "tag.fill")
                             Spacer()
@@ -143,6 +148,11 @@ struct BudgetView: View {
                 Text(model.budgetAlert ?? "")
             }
             .appDestinations()
+            .navigationDestination(for: BudgetRoute.self) { route in
+                switch route {
+                case .myPrices: MyPricesContent()
+                }
+            }
         }
     }
 

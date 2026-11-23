@@ -15,9 +15,20 @@ struct StoresView: View {
     @State private var selectedStoreID: String?
     /// Relie le bouton « Ma position » (posé sur la carte) à la carte.
     @Namespace private var mapScope
+    /// Recherche de magasins (nom, enseigne, adresse), puis sur Plans pour ceux qui ne sont pas encore connus.
+    @State private var searchText = ""
+    @State private var planResults: [Store] = []
+    @State private var planSearching = false
+    @FocusState private var searchFocused: Bool
+
+    private var isSearching: Bool { !searchText.trimmed.isEmpty }
+
+    private var searchMatches: [Store] {
+        StoreSearch.matches(model.knownStores, query: searchText, reference: model.referenceLocation)
+    }
 
     private var selectedStore: Binding<Store?> {
-        Binding(get: { selectedStoreID.flatMap { id in model.knownStores.first { $0.id == id } } },
+        Binding(get: { selectedStoreID.flatMap { id in (model.knownStores + planResults).first { $0.id == id } } },
                 set: { selectedStoreID = $0?.id })
     }
 
@@ -76,6 +87,28 @@ struct StoresView: View {
             async let ranking: Void = model.refreshChainIndex()
             _ = await (fuel, ranking)
         }
+        .task(id: searchText) { await searchPlans() }
+        // La carte se cadre sur les résultats de la recherche (et revient aux magasins proches ensuite).
+        .onChange(of: mapStores.map(\.id)) { _, _ in
+            withAnimation(.smooth) { camera = .automatic }
+        }
+    }
+
+    /// Supermarchés trouvés par Plans pour la recherche (après une courte pause dans la frappe).
+    private func searchPlans() async {
+        let query = searchText.trimmed
+        guard query.count >= 2 else {
+            planResults = []
+            planSearching = false
+            return
+        }
+        try? await Task.sleep(for: .milliseconds(500))
+        if Task.isCancelled { return }
+        planSearching = true
+        let found = await StoreSearch.apple(query: query, near: model.referenceLocation, excluding: model.knownStores)
+        if Task.isCancelled { return }
+        planResults = found
+        planSearching = false
     }
 
     // MARK: Carte
@@ -99,13 +132,47 @@ struct StoresView: View {
                 .frame(height: 130)
                 .allowsHitTesting(false)
         }
-        // « Ma position », en bas à droite de la carte (hors de la barre du haut).
-        .overlay(alignment: .bottomTrailing) {
-            MapUserLocationButton(scope: mapScope)
-                .padding(12)
+        // En bas de la carte (hors de la barre du haut) : la recherche de magasins et « Ma position ».
+        .overlay(alignment: .bottom) {
+            HStack(spacing: 10) {
+                searchField
+                MapUserLocationButton(scope: mapScope)
+            }
+            .padding(12)
         }
         .mapScope(mapScope)
         .frame(height: 330)
+    }
+
+    /// Champ de recherche en verre posé sur la carte.
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Rechercher un supermarché", text: $searchText)
+                .focused($searchFocused)
+                .submitLabel(.search)
+                .autocorrectionDisabled()
+                .accessibilityIdentifier("storeSearchField")
+            if planSearching {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            if isSearching {
+                Button {
+                    searchText = ""
+                    searchFocused = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Effacer la recherche")
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .glassEffect(.regular.interactive(), in: Capsule())
     }
 
     /// Épingle d'un magasin : l'initiale de l'enseigne sur sa couleur (« E » bleu pour Leclerc),
@@ -128,7 +195,11 @@ struct StoresView: View {
 
     /// Sur la carte : les 80 magasins les plus proches et les favoris (la liste, elle, est complète).
     /// Des centaines d'épingles superposées seraient illisibles et lentes à afficher.
+    /// Pendant une recherche : seulement les magasins trouvés.
     private var mapStores: [Store] {
+        if isSearching {
+            return Array(searchMatches.prefix(60)) + planResults
+        }
         let visible = model.visibleStores
         var shown = Array(visible.prefix(80))
         let shownIDs = Set(shown.map(\.id))
@@ -155,6 +226,9 @@ struct StoresView: View {
         let report = model.chainIndex
 
         return List {
+          if isSearching {
+            searchSections
+          } else {
             Section {
                 bestNearbyCard
                     .clearListRow(top: 4, bottom: 4)
@@ -214,12 +288,63 @@ struct StoresView: View {
                     Text("Sources : \(source). Sur la carte : chaque enseigne a sa couleur et son initiale (E pour E.Leclerc, L pour Lidl…), ★ vos magasins, en vert les autres magasins avec des prix relevés. Horaires : OpenStreetMap (quand ils sont connus).")
                 }
             }
+          }
         }
         .listStyle(.insetGrouped)
         .contentMargins(.top, 12, for: .scrollContent)
+        .scrollDismissesKeyboard(.immediately)
         .refreshable {
             await model.refreshStores()
             await model.refreshFuel(force: true)
+        }
+    }
+
+    /// Résultats de la recherche : magasins connus (nom, enseigne, adresse), puis ceux trouvés sur Plans.
+    @ViewBuilder
+    private var searchSections: some View {
+        let reference = model.referenceLocation
+        let report = model.chainIndex
+        let matches = searchMatches
+        Section {
+            if matches.isEmpty {
+                Text("Aucun magasin connu ne correspond.")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(matches.prefix(40)) { store in
+                NavigationLink(value: store) {
+                    StoreRow(store: store,
+                             distance: store.distance(from: reference),
+                             chainEntry: report?.entry(for: store.chainKey),
+                             favorite: model.isFavorite(store))
+                }
+                .accessibilityIdentifier("storeSearchResult")
+            }
+        } header: {
+            Text(matches.isEmpty ? "Magasins autour de vous" : "Magasins autour de vous (\(matches.count))")
+        }
+
+        Section {
+            if planSearching && planResults.isEmpty {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Recherche sur Plans…").foregroundStyle(.secondary)
+                }
+            } else if planResults.isEmpty && searchText.trimmed.count >= 2 {
+                Text("Aucun autre supermarché trouvé sur Plans.")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(planResults) { store in
+                NavigationLink(value: store) {
+                    StoreRow(store: store,
+                             distance: store.distance(from: reference),
+                             chainEntry: report?.entry(for: store.chainKey),
+                             favorite: model.isFavorite(store))
+                }
+            }
+        } header: {
+            Text("Sur Plans")
+        } footer: {
+            Text("Supermarchés trouvés par Plans, jusqu'à 25 km environ. Touchez-en un pour sa fiche : itinéraire, site de l'enseigne, relevé de prix, ou l'ajouter à vos magasins.")
         }
     }
 
@@ -314,9 +439,7 @@ struct StoresView: View {
                             }
                         }
                     }
-                    NavigationLink {
-                        ChainRankingView()
-                    } label: {
+                    NavigationLink(value: StoresRoute.ranking) {
                         Label("Classement complet des enseignes", systemImage: "list.number")
                     }
                     .accessibilityIdentifier("chainRankingLink")
