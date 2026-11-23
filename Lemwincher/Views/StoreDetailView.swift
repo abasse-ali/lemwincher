@@ -114,6 +114,26 @@ struct StoreDetailView: View {
 
                 StoreSiteButtons(store: store, request: $browser)
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                // Mes rayons de ce magasin sur le site : un toucher, et le rayon s'ouvre directement.
+                ForEach(model.state.trackedPages.filter { $0.store.id == store.id }) { page in
+                    Button {
+                        if let url = URL(string: page.url) { browser = .page(url) }
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(page.shortTitle)
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                Text("Rayon suivi · \(page.siteName)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "bookmark.fill")
+                        }
+                    }
+                    .accessibilityIdentifier("storeTrackedPage")
+                }
                 // Site propre du magasin (en plus de celui de l'enseigne), ouvert dans l'app pour en lire les prix.
                 if let website = store.websiteURL, DriveSite.forStore(store) != nil {
                     Button {

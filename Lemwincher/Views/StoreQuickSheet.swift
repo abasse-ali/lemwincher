@@ -2,40 +2,60 @@ import SwiftUI
 
 /// Site à ouvrir dans le navigateur de l'app depuis un magasin.
 enum StoreBrowserRequest: Identifiable {
-    /// Site de l'enseigne (Aldi, Leclerc Drive…), ouvert sur ses rayons.
+    /// Site de l'enseigne (Aldi, Leclerc Drive…), rouvert sur la page retenue pour ce magasin, sinon ses rayons.
     case chain(DriveSite)
     /// Site propre du magasin (adresse connue d'OpenStreetMap).
     case website(URL)
+    /// Une page précise du site (rayon suivi).
+    case page(URL)
 
     var id: String {
         switch self {
         case .chain(let site): return "chain:" + site.id
         case .website(let url): return "web:" + url.absoluteString
+        case .page(let url): return "page:" + url.absoluteString
         }
     }
 }
 
 /// Boutons « Rayons et prix sur le site » d'un magasin (carte, fiche du magasin).
 struct StoreSiteButtons: View {
+    @Environment(AppModel.self) private var model
     let store: Store
     @Binding var request: StoreBrowserRequest?
     var prominent = true
 
     var body: some View {
         if let site = DriveSite.forStore(store) {
-            button(title: "Rayons et prix sur le site \(site.name)", symbol: "safari.fill") {
+            siteButton(title: "Rayons et prix sur le site \(site.name)", siteID: site.id) {
                 request = .chain(site)
             }
-            .accessibilityIdentifier("storeSiteButton")
         } else if let website = store.websiteURL {
-            button(title: "Rayons et prix sur le site du magasin", symbol: "safari.fill") {
+            siteButton(title: "Rayons et prix sur le site du magasin",
+                       siteID: DriveSite.custom(for: store, url: website).id) {
                 request = .website(website)
             }
-            .accessibilityIdentifier("storeSiteButton")
         } else {
             Label("Pas de site de courses connu pour ce magasin.", systemImage: "safari")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    /// Le bouton du site, et la page où il reprend pour ce magasin (son drive, son dernier rayon).
+    @ViewBuilder
+    private func siteButton(title: String, siteID: String, action: @escaping () -> Void) -> some View {
+        let page = model.sitePage(for: store, siteID: siteID)
+        VStack(alignment: .leading, spacing: 6) {
+            button(title: title, symbol: "safari.fill", action: action)
+                .accessibilityIdentifier("storeSiteButton")
+            if let page {
+                Label("Reprend à « \(page.displayTitle) » (\(Fmt.day(page.updated)))", systemImage: "clock.arrow.circlepath")
+                    .labelStyle(.titleAndIcon)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
         }
     }
 
@@ -63,10 +83,17 @@ extension View {
         fullScreenCover(item: request) { request in
             switch request {
             case .chain(let site):
-                DriveCaptureView(query: "", preferredChain: site.chainPrefix, startURL: site.startURL, store: store)
+                // Sans adresse de départ : la page retenue pour ce magasin, sinon les rayons du site.
+                DriveCaptureView(query: "", preferredChain: site.chainPrefix, store: store)
             case .website(let url):
-                DriveCaptureView(query: "", startURL: url, store: store,
-                                 customSite: DriveSite.custom(for: store, url: url))
+                DriveCaptureView(query: "", store: store, customSite: DriveSite.custom(for: store, url: url))
+            case .page(let url):
+                if let site = DriveSite.forStore(store) {
+                    DriveCaptureView(query: "", preferredChain: site.chainPrefix, startURL: url, store: store)
+                } else {
+                    DriveCaptureView(query: "", startURL: url, store: store,
+                                     customSite: store.websiteURL.map { DriveSite.custom(for: store, url: $0) })
+                }
             }
         }
     }

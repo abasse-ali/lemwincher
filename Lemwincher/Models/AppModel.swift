@@ -500,6 +500,34 @@ final class AppModel {
         state.expenses.removeAll { ids.contains($0.id) }
     }
 
+    // MARK: Site de chaque magasin
+
+    /// La page retenue pour ce magasin sur ce site (son drive, son dernier rayon).
+    func sitePage(for store: Store, siteID: String) -> StoreSitePage? {
+        state.sitePages.first { $0.store.id == store.id && $0.siteID == siteID }
+    }
+
+    /// La dernière page retenue sur ce site, quel que soit le magasin (le drive qu'on utilise).
+    func lastSitePage(siteID: String) -> StoreSitePage? {
+        state.sitePages.filter { $0.siteID == siteID }.max { $0.updated < $1.updated }
+    }
+
+    /// Retient la page du site où l'on est pour ce magasin (sans connexion, compte, panier…).
+    func rememberSitePage(store: Store, site: DriveSite, url: URL, title: String?) {
+        guard StoreSitePage.isWorthRemembering(url, on: site) else { return }
+        let page = StoreSitePage(store: store, siteID: site.id, siteName: site.name, url: url.absoluteString,
+                                 title: title?.trimmed.nilIfBlank, updated: Date())
+        if let index = state.sitePages.firstIndex(where: { $0.id == page.id }) {
+            let old = state.sitePages[index]
+            // Même page : on ne réécrit pas (chaque changement redessine l'app et l'enregistre).
+            guard old.url != page.url || (page.title != nil && old.title != page.title) else { return }
+            state.sitePages[index] = page
+        } else {
+            state.sitePages.append(page)
+            Log.info(.sites, "Site \(site.name) retenu pour \(store.name)", details: Log.describe(url))
+        }
+    }
+
     // MARK: Alimentation et recettes
 
     /// Ce produit peut-il être proposé (sans porc si demandé) ?
@@ -755,6 +783,8 @@ final class AppModel {
     @discardableResult
     func recordCapture(_ items: [CapturedPrice], site: DriveSite, store: Store, pageURL: URL?,
                        pageTitle: String?, track: Bool) -> [PriceUpdate] {
+        // Ce site (et ce drive) appartient désormais à ce magasin : il s'y rouvrira directement.
+        if let pageURL { rememberSitePage(store: store, site: site, url: pageURL, title: pageTitle) }
         let currency = state.settings.currency
         let result = CaptureUpdater.apply(items, to: state.myPrices, store: store, currency: currency,
                                           source: "site \(site.name)")

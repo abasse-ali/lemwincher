@@ -362,6 +362,8 @@ struct PersistedState: Codable, Equatable {
     var compareEntries: [ManualCompareEntry] = []
     /// Mes recettes (écrites ou personnalisées), la plus récente en premier.
     var myRecipes: [MyRecipe] = []
+    /// Pour chaque magasin, sa page sur le site de l'enseigne (drive choisi, dernier rayon).
+    var sitePages: [StoreSitePage] = []
 
     init() {}
 
@@ -378,6 +380,7 @@ struct PersistedState: Codable, Equatable {
         trackedPages = ((try? c.decode([Lossy<TrackedPage>].self, forKey: .trackedPages)) ?? []).compactMap(\.value)
         compareEntries = ((try? c.decode([Lossy<ManualCompareEntry>].self, forKey: .compareEntries)) ?? []).compactMap(\.value)
         myRecipes = ((try? c.decode([Lossy<MyRecipe>].self, forKey: .myRecipes)) ?? []).compactMap(\.value)
+        sitePages = ((try? c.decode([Lossy<StoreSitePage>].self, forKey: .sitePages)) ?? []).compactMap(\.value)
     }
 }
 

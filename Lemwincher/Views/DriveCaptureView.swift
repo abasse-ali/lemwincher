@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Combine
 
 /// Navigateur de l'app, avec la lecture des prix : il garde la page web et reçoit l'avancement
 /// de la lecture (« 156 produits lus ») envoyé par le script.
@@ -189,6 +190,10 @@ struct DriveCaptureView: View {
     /// (avec `sheet(isPresented:)`, la feuille pouvait s'ouvrir avec une liste encore vide).
     @State private var review: CaptureBatch?
     @State private var message: String? = nil
+    /// Page retenue pour ce magasin, rouverte directement (bandeau « Reprise… · Accueil du site »).
+    @State private var resumed: StoreSitePage?
+    /// Page affichée : retenue pour le magasin quelques instants après chaque changement.
+    @State private var currentURL: URL?
 
     struct CaptureBatch: Identifiable {
         let id = UUID()
@@ -223,7 +228,24 @@ struct DriveCaptureView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 siteBar
-                if site.choosesStore {
+                if let resumed {
+                    // Le site rouvert là où l'on était pour ce magasin (son drive, son rayon).
+                    HStack(spacing: 8) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .foregroundStyle(Color.brand)
+                        Text("\(resumed.store.name) : \(resumed.displayTitle)")
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        Button("Accueil du site") { loadSiteHome() }
+                            .font(.caption.weight(.semibold))
+                            .accessibilityIdentifier("siteHome")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color(.secondarySystemBackground))
+                } else if site.choosesStore {
                     // Drives (Leclerc, Carrefour, Auchan, Intermarché, U…) : pas de prix tant qu'aucun magasin n'est choisi.
                     Label("Choisissez d'abord votre magasin sur le site (une seule fois) : ses prix s'affichent ensuite.",
                           systemImage: "storefront")
@@ -329,7 +351,40 @@ struct DriveCaptureView: View {
                 }
             }
             .onChange(of: site) { _, _ in load() }
+            .onReceive(session.webView.publisher(for: \.url)) { url in currentURL = url }
+            .task(id: currentURL) {
+                // Une fois la page chargée (titre compris), elle est retenue pour le magasin.
+                try? await Task.sleep(for: .seconds(1.5))
+                if !Task.isCancelled { rememberCurrentPage() }
+            }
         }
+    }
+
+    /// Magasin auquel rattacher ce site : celui d'où l'on vient, sinon celui du dernier drive utilisé sur ce site.
+    private var siteStore: Store? {
+        store ?? model.lastSitePage(siteID: site.id)?.store
+    }
+
+    private func rememberCurrentPage() {
+        guard let url = session.webView.url, let target = siteStore else { return }
+        model.rememberSitePage(store: target, site: site, url: url, title: session.webView.title)
+    }
+
+    /// Page où reprendre : celle retenue pour ce magasin sur ce site ; sans magasin, la dernière vue sur ce site.
+    /// Pas quand on cherche un produit précis sur un site qui a une recherche.
+    private func resumePage(for site: DriveSite) -> StoreSitePage? {
+        let searching = !query.trimmed.isEmpty && site.searchTemplate.contains("{q}")
+        guard !searching else { return nil }
+        if let store { return model.sitePage(for: store, siteID: site.id) }
+        return model.lastSitePage(siteID: site.id)
+    }
+
+    /// « Accueil du site » : repartir de l'accueil (ou des rayons) plutôt que de la page retenue.
+    private func loadSiteHome() {
+        resumed = nil
+        message = nil
+        guard let url = site.startURL else { return }
+        session.webView.load(URLRequest(url: url))
     }
 
     /// Pendant la lecture : nombre de produits déjà lus, et « Arrêter » pour vérifier ce qui est lu.
@@ -392,6 +447,12 @@ struct DriveCaptureView: View {
     /// Recherche du produit sur le site choisi (ou ses rayons / son accueil si rien n'est cherché).
     private func load() {
         message = nil
+        if let page = resumePage(for: site), let url = URL(string: page.url) {
+            resumed = page
+            session.webView.load(URLRequest(url: url))
+            return
+        }
+        resumed = nil
         let url = query.trimmed.isEmpty ? site.startURL : site.url(for: query)
         guard let url else { return }
         session.webView.load(URLRequest(url: url))
@@ -422,7 +483,7 @@ struct DriveCaptureView: View {
             if found.isEmpty {
                 message = "Aucun prix lisible sur cette page. Ouvrez un rayon ou une recherche (choisissez votre magasin si le site le demande), puis réessayez."
             } else {
-                review = CaptureBatch(items: found, site: site, store: store, withoutPrice: withoutPrice,
+                review = CaptureBatch(items: found, site: site, store: siteStore, withoutPrice: withoutPrice,
                                       pageURL: session.webView.url, pageTitle: session.webView.title)
             }
         }
