@@ -148,7 +148,7 @@ struct PromotionsView: View {
     }
 
     var body: some View {
-        let deals = deals
+        let deals = self.deals
         List {
             Section {
                 Picker("Ordre", selection: $order) {
