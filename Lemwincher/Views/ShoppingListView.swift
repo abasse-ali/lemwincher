@@ -139,6 +139,8 @@ struct ShoppingListView: View {
 
     var body: some View {
         @Bindable var bindable = model
+        // Prix affiché à côté de chaque article : le moins cher trouvé autour de soi.
+        let bestLines = model.state.shoppingList.contains { !$0.checked } ? basket.bestLines : [:]
         NavigationStack(path: $path) {
             List {
                 quickAddSection
@@ -161,7 +163,8 @@ struct ShoppingListView: View {
                                                    onOpen: { product in path.append(product) },
                                                    onCapture: { query in captureRequest = CaptureRequest(query: query) })
                             } label: {
-                                ShoppingRow(item: $item, onToggle: { toggle(item) })
+                                ShoppingRow(item: $item, bestLine: item.checked ? nil : bestLines[item.id],
+                                            onToggle: { toggle(item) })
                             }
                             // Glisser la ligne vers la droite : acheté (dépense) / pas acheté.
                             .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -585,6 +588,8 @@ struct ShoppingListView: View {
 struct ShoppingRow: View {
     @Environment(AppModel.self) private var model
     @Binding var item: ShoppingItem
+    /// Meilleur prix trouvé pour l'article (magasin compris), affiché à côté.
+    var bestLine: BasketLine? = nil
     /// Cocher / décocher (acheté : dépense ajoutée au budget).
     var onToggle: (() -> Void)? = nil
 
@@ -622,6 +627,27 @@ struct ShoppingRow: View {
 
                 Spacer(minLength: 4)
 
+                if let bestLine {
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(Fmt.price(bestLine.price * Double(item.quantity), bestLine.currency))
+                            .font(.subheadline.bold().monospacedDigit())
+                            .foregroundStyle(bestLine.isEstimate ? Color.primary : Color.brand)
+                            .contentTransition(.numericText())
+                        if item.quantity > 1 {
+                            Text("\(Fmt.price(bestLine.price, bestLine.currency))/u")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        } else if bestLine.isEstimate {
+                            Text("estimé")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .lineLimit(1)
+                    .fixedSize()
+                    .accessibilityIdentifier("itemPrice")
+                }
+
                 QuantityControl(quantity: $item.quantity)
                     .onChange(of: item.quantity) { old, new in
                         model.rescaleListExpense(itemID: item.id, from: old, to: new)
@@ -633,6 +659,14 @@ struct ShoppingRow: View {
                     .font(.caption)
                     .foregroundStyle(Color.brand)
                     .lineLimit(2)
+                    .padding(.leading, detailIndent)
+            }
+            if let bestLine {
+                Label(bestLine.isEstimate ? "Prix estimé chez \(bestLine.storeName)" : "Le moins cher chez \(bestLine.storeName)",
+                      systemImage: "mappin.and.ellipse")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                     .padding(.leading, detailIndent)
             }
             if item.checked, let expense = model.listExpense(for: item) {

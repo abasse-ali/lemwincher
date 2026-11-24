@@ -36,6 +36,12 @@ final class AppModel {
     var fuelError: String?
     var fuelUpdated: Date?
 
+    // Promotions relevées autour de soi par la communauté (Open Prices)
+    var nearbyPromoPrices: [PriceObservation] = []
+    var promosLoading = false
+    @ObservationIgnored private var promosLoadedKey: String?
+    @ObservationIgnored private var promosUpdated: Date?
+
     // Rappels de produits
     var departmentName: String?
     var localRecalls: [Recall] = []
@@ -186,16 +192,25 @@ final class AppModel {
 
     /// Magasins affichés : supermarchés (ou tout) + favoris + magasins avec des prix ; option « ouverts maintenant ».
     var visibleStores: [Store] {
-        var list = stores
-        if state.settings.supermarketsOnly {
-            let favoriteIDs = Set(state.settings.favoriteStores.map(\.id))
-            list = list.filter { $0.isSupermarket || ($0.priceCount ?? 0) > 0 || favoriteIDs.contains($0.id) }
-        }
+        var list = listedStores
         if state.settings.openNowOnly {
+            // Seulement les magasins dont on sait qu'ils sont ouverts : sans horaires connus, on ne peut pas le dire.
             let now = Date()
-            list = list.filter { $0.hours?.status(at: now).isOpen ?? true }
+            list = list.filter { $0.hours?.status(at: now).isOpen == true }
         }
         return list
+    }
+
+    /// Magasins masqués par « Ouverts maintenant » parce que leurs horaires ne sont pas connus.
+    var storesWithUnknownHours: Int {
+        guard state.settings.openNowOnly else { return 0 }
+        return listedStores.filter { $0.hours == nil }.count
+    }
+
+    private var listedStores: [Store] {
+        guard state.settings.supermarketsOnly else { return stores }
+        let favoriteIDs = Set(state.settings.favoriteStores.map(\.id))
+        return stores.filter { $0.isSupermarket || ($0.priceCount ?? 0) > 0 || favoriteIDs.contains($0.id) }
     }
 
     /// Magasins proches + favoris + magasins déjà utilisés dans mes relevés.
@@ -315,6 +330,40 @@ final class AppModel {
                 Log.error(.fuel, "Prix des carburants indisponibles", details: error.localizedDescription)
             }
             fuelLoading = false
+        }
+    }
+
+    // MARK: Promotions
+
+    /// Promos autour de soi : mes relevés (sites des enseignes, magasins) et ceux de la communauté, 14 derniers jours.
+    var promoDeals: [PromoDeal] {
+        PromoFinder.deals(in: PriceEngine.observations(from: state.myPrices) + nearbyPromoPrices,
+                          reference: referenceLocation, radius: radiusMeters)
+    }
+
+    @MainActor
+    func refreshPromos(force: Bool = false) async {
+        guard let ref = referenceLocation else { return }
+        let key = locationKey
+        if !force, key == promosLoadedKey, let updated = promosUpdated, Date().timeIntervalSince(updated) < 30 * 60 {
+            return
+        }
+        guard !promosLoading else { return }
+        promosLoading = true
+        defer { promosLoading = false }
+        do {
+            let prices = try await OpenPricesAPI.recentDiscountsNear(lat: ref.coordinate.latitude,
+                                                                     lon: ref.coordinate.longitude,
+                                                                     radiusKm: state.settings.radiusKm)
+            guard key == locationKey else { return }
+            nearbyPromoPrices = PriceEngine.observations(from: prices)
+            promosLoadedKey = key
+            promosUpdated = Date()
+            Log.info(.prices, "\(nearbyPromoPrices.filter(\.isDiscounted).count) promos relevées par la communauté autour de vous")
+        } catch {
+            if !error.isCancellation {
+                Log.warning(.prices, "Promos de la communauté indisponibles", details: error.localizedDescription)
+            }
         }
     }
 

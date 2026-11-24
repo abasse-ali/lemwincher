@@ -680,6 +680,12 @@ struct CompareRow: View {
                         Image(systemName: "star.fill").font(.caption).foregroundStyle(Color.yellow)
                     }
                 }
+                if let address = obs.storeAddress?.nilIfBlank {
+                    Text(address)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
                 HStack(spacing: 4) {
                     Text(Fmt.join(distance.map { Fmt.distance($0) }, Fmt.day(obs.date), obs.unitPriceText))
                     if obs.source == .mine {

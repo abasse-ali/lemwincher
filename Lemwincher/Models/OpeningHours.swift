@@ -32,9 +32,39 @@ struct OpeningHours: Hashable {
     }
 
     init?(_ raw: String) {
-        guard let tokens = OpeningHours.tokenize(raw), !tokens.isEmpty,
-              let week = OpeningHours.parse(tokens) else { return nil }
+        guard let week = OpeningHours.parseLenient(raw) else { return nil }
         self.week = week
+    }
+
+    /// Tout le texte s'il est compris ; sinon (mois, semaines, commentaires « … », lever du soleil…)
+    /// seulement les règles comprises, une à une : « Mo-Sa 08:30-20:00; Dec 24 08:30-18:00 » donne Mo-Sa.
+    private static func parseLenient(_ raw: String) -> [[Span]]? {
+        if let tokens = tokenize(raw), !tokens.isEmpty, let week = parse(tokens) { return week }
+        let rules = withoutComments(raw)
+            .replacingOccurrences(of: "||", with: ";")
+            .split(separator: ";")
+            .map(String.init)
+        let kept = rules.filter { rule in
+            guard let tokens = tokenize(rule), !tokens.isEmpty else { return false }
+            return parseRules(tokens) != nil
+        }
+        guard !kept.isEmpty, let tokens = tokenize(kept.joined(separator: ";")) else { return nil }
+        return parse(tokens)
+    }
+
+    /// Retire les commentaires entre guillemets (« "sur rendez-vous" ») et ce qui suit un guillemet non fermé.
+    private static func withoutComments(_ raw: String) -> String {
+        var result = ""
+        var inside = false
+        for c in raw {
+            if c == "\"" || c == "“" || c == "”" {
+                inside.toggle()
+                result.append(" ")
+            } else if !inside {
+                result.append(c)
+            }
+        }
+        return result
     }
 
     /// Ouvert tous les jours, toute la journée.
@@ -144,7 +174,14 @@ struct OpeningHours: Hashable {
         case allWeek
     }
 
-    private static let dayNames = ["mo": 0, "tu": 1, "we": 2, "th": 3, "fr": 4, "sa": 5, "su": 6]
+    private static let dayNames = [
+        "mo": 0, "tu": 1, "we": 2, "th": 3, "fr": 4, "sa": 5, "su": 6,
+        // Saisies en français qu'on croise sur OpenStreetMap (« lu-sa 8h30-20h »).
+        "lu": 0, "ma": 1, "me": 2, "je": 3, "ve": 4, "di": 6,
+        "lun": 0, "mer": 2, "jeu": 3, "ven": 4, "sam": 5, "dim": 6,
+        "lundi": 0, "mardi": 1, "mercredi": 2, "jeudi": 3, "vendredi": 4, "samedi": 5, "dimanche": 6,
+    ]
+    private static let closedWords: Set<String> = ["off", "closed", "ferme", "fermé", "fermée"]
 
     private static func tokenize(_ raw: String) -> [Token]? {
         let chars = Array(raw.lowercased())
@@ -176,8 +213,10 @@ struct OpeningHours: Hashable {
                     tokens.append(.day(day))
                 } else if word == "ph" || word == "sh" {
                     tokens.append(.holiday)
-                } else if word == "off" || word == "closed" {
+                } else if closedWords.contains(word) {
                     tokens.append(.off)
+                } else if word == "open" {
+                    // « Mo-Sa 08:00-20:00 open » : « open » est la valeur par défaut.
                 } else {
                     return nil
                 }
@@ -191,9 +230,15 @@ struct OpeningHours: Hashable {
                     i = j + 2
                     continue
                 }
-                guard j < chars.count, chars[j] == ":" else { return nil }
+                guard j < chars.count, chars[j] == ":" || chars[j] == "h" else { return nil }
                 var k = j + 1
                 while k < chars.count, chars[k].isASCII, chars[k].isNumber { k += 1 }
+                // « 8h » (sans minutes) en plus de « 08:00 » et « 8h30 ».
+                if chars[j] == "h", k == j + 1, let hours = Int(String(chars[i..<j])), hours <= 48 {
+                    tokens.append(.time(hours * 60))
+                    i = k
+                    continue
+                }
                 guard k - (j + 1) == 2,
                       let hours = Int(String(chars[i..<j])),
                       let minutes = Int(String(chars[(j + 1)..<k])),
@@ -213,6 +258,12 @@ struct OpeningHours: Hashable {
     }
 
     private static func parse(_ tokens: [Token]) -> [[Span]]? {
+        guard let result = parseRules(tokens), result.applied else { return nil }
+        return result.week
+    }
+
+    /// Les règles lues, et si l'une d'elles s'applique à des jours de la semaine (pas seulement aux fériés).
+    private static func parseRules(_ tokens: [Token]) -> (week: [[Span]], applied: Bool)? {
         var week: [[Span]] = Array(repeating: [], count: 7)
         var appliedRule = false
         var i = 0
@@ -291,6 +342,6 @@ struct OpeningHours: Hashable {
                 i += 1
             }
         }
-        return appliedRule ? week : nil
+        return (week, appliedRule)
     }
 }

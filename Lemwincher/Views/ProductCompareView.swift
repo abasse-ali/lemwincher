@@ -28,15 +28,31 @@ struct ProductCompareView: View {
 
     // MARK: Données dérivées
 
-    /// Dernier prix connu dans chaque magasin du rayon, trié par prix.
-    private var rows: [PriceObservation] {
+    /// Où trouver le produit : dernier prix connu dans chaque magasin du rayon, et dans chaque magasin
+    /// de mes relevés même plus loin (un drive choisi sur le site d'une enseigne), trié par prix.
+    private var allRows: [PriceObservation] {
+        PriceEngine.latestPerStore(local + model.myObservations(productCode: product.code))
+            .sorted { $0.price < $1.price }
+    }
+
+    /// Les magasins du rayon seulement (meilleur prix, économie, suivi du prix).
+    private func withinRadius(_ rows: [PriceObservation]) -> [PriceObservation] {
         let reference = model.referenceLocation
         let radius = model.radiusMeters
-        let mine = model.myObservations(productCode: product.code).filter { obs in
+        return rows.filter { obs in
             guard let distance = obs.distance(from: reference) else { return true }
             return distance <= radius
         }
-        return PriceEngine.latestPerStore(local + mine).sorted { $0.price < $1.price }
+    }
+
+    /// Rien autour de soi : les magasins les plus proches où le produit a été relevé en France (12 mois).
+    private func elsewhere(excluding rows: [PriceObservation]) -> [PriceObservation] {
+        let reference = model.referenceLocation
+        let known = Set(rows.map(\.storeKey))
+        return Array(PriceEngine.latestPerStore(nationalUsable)
+            .filter { !known.contains($0.storeKey) && $0.lat != nil }
+            .sorted { ($0.distance(from: reference) ?? .infinity) < ($1.distance(from: reference) ?? .infinity) }
+            .prefix(5))
     }
 
     /// Relevés du pays (12 mois) dans la devise de l'utilisateur.
@@ -59,7 +75,9 @@ struct ProductCompareView: View {
     // MARK: Vue
 
     var body: some View {
-        let rows = self.rows
+        let allRows = self.allRows
+        let rows = withinRadius(allRows)
+        let farther = rows.isEmpty ? elsewhere(excluding: allRows) : []
         let estimates = ChainStats.estimates(from: nationalUsable, near: model.referenceLocation)
         let nearby = model.nearestStoreByChain
         let nearbyEstimates = estimates.filter { nearby[$0.key] != nil }
@@ -67,13 +85,16 @@ struct ProductCompareView: View {
 
         List {
             Section {
-                productHero(best: rows.first)
+                productHero(best: rows.first, where: rows.isEmpty ? (allRows.first ?? farther.first) : nil)
                     .clearListRow(top: 2, bottom: 6)
             }
 
             // Rappel en cours, porc, gélatine, additifs, promos relevées… ou « aucun rappel en cours ».
             ProductAlertsSection(product: product, facts: facts,
                                  observations: local + model.myObservations(productCode: product.code))
+
+            // Où le trouver, juste sous la photo : le magasin compte autant que le prix.
+            localSection(rows: allRows, farther: farther)
 
             Section {
                 if let generic = facts?.genericName {
@@ -99,8 +120,6 @@ struct ProductCompareView: View {
                     }
                 }
             }
-
-            localSection(rows: rows)
 
             let similar = ValueCompare.genericQuery(for: product.name)
             if !similar.isEmpty {
@@ -232,7 +251,8 @@ struct ProductCompareView: View {
     // MARK: Sections
 
     /// En-tête : grande photo, nom, marque et contenance, et le meilleur prix relevé autour de vous.
-    private func productHero(best: PriceObservation?) -> some View {
+    /// `where` : faute de prix autour de soi, le magasin le plus proche où le produit a été relevé.
+    private func productHero(best: PriceObservation?, where fallback: PriceObservation?) -> some View {
         VStack(spacing: 14) {
             ProductThumb(url: product.imageURL, size: 168, name: product.name)
                 .shadow(color: .black.opacity(0.16), radius: 18, y: 10)
@@ -267,6 +287,19 @@ struct ProductCompareView: View {
                 .glassEffect(.regular.tint(Color.brand.opacity(0.4)), in: Capsule())
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Meilleur prix autour de vous : \(Fmt.price(best.price, best.currency)) chez \(best.storeName)")
+            } else if let fallback {
+                HStack(spacing: 6) {
+                    Image(systemName: "mappin.and.ellipse")
+                    Text(Fmt.price(fallback.price, fallback.currency)).fontWeight(.bold).monospacedDigit()
+                    Text(Fmt.join("chez \(fallback.storeName)",
+                                  fallback.distance(from: model.referenceLocation).map { Fmt.distance($0) }))
+                        .lineLimit(1)
+                }
+                .font(.subheadline)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .glassEffect(.regular, in: Capsule())
+                .accessibilityElement(children: .combine)
             }
         }
         .frame(maxWidth: .infinity)
@@ -296,7 +329,7 @@ struct ProductCompareView: View {
     }
 
     @ViewBuilder
-    private func localSection(rows: [PriceObservation]) -> some View {
+    private func localSection(rows: [PriceObservation], farther: [PriceObservation]) -> some View {
         Section {
             if model.referenceLocation == nil {
                 Text("Activez la localisation ou indiquez votre domicile dans Réglages pour comparer les prix autour de vous.")
@@ -313,29 +346,44 @@ struct ProductCompareView: View {
             }
             if !loading && rows.isEmpty && model.referenceLocation != nil {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Personne n'a encore relevé ce produit à moins de \(Int(model.settings.radiusKm)) km.")
+                    Text(farther.isEmpty
+                         ? "Personne n'a encore relevé ce produit à moins de \(Int(model.settings.radiusKm)) km."
+                         : "Pas encore relevé à moins de \(Int(model.settings.radiusKm)) km. Les magasins les plus proches où il a été vu :")
                         .foregroundStyle(.secondary)
-                    Button("Relever son prix en magasin") { showAddPrice = true }
-                        .buttonStyle(.glass)
+                    if farther.isEmpty {
+                        Button("Relever son prix en magasin") { showAddPrice = true }
+                            .buttonStyle(.glass)
+                    }
                 }
                 .padding(.vertical, 4)
             }
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, obs in
-                let distance = obs.distance(from: model.referenceLocation)
-                let isCheapest = index == 0 && rows.count > 1
-                let favorite = model.state.settings.favoriteStores.contains { $0.id == obs.storeKey }
-                if let store = obs.store {
-                    NavigationLink(value: store) {
-                        CompareRow(obs: obs, rank: index + 1, distance: distance, cheapest: isCheapest, favorite: favorite)
-                    }
-                } else {
-                    CompareRow(obs: obs, rank: index + 1, distance: distance, cheapest: isCheapest, favorite: favorite)
-                }
+                storeRow(obs, rank: index + 1, cheapest: index == 0 && rows.count > 1)
+            }
+            ForEach(Array(farther.enumerated()), id: \.element.id) { index, obs in
+                storeRow(obs, rank: rows.count + index + 1, cheapest: false)
             }
         } header: {
-            Text("Prix relevés à moins de \(Int(model.settings.radiusKm)) km")
+            Text("Où le trouver")
         } footer: {
-            Text("Dernier prix connu dans chaque magasin. Sources : Open Prices (communauté) et vos relevés (icône personne).")
+            Text(farther.isEmpty
+                 ? "Dernier prix connu dans chaque magasin à moins de \(Int(model.settings.radiusKm)) km, et dans les magasins de vos relevés (icône personne). Touchez un magasin pour l'itinéraire. Sources : Open Prices et vos relevés."
+                 : "Relevés Open Prices des 12 derniers mois, du plus proche au plus loin. Touchez un magasin pour l'itinéraire.")
+        }
+    }
+
+    @ViewBuilder
+    private func storeRow(_ obs: PriceObservation, rank: Int, cheapest: Bool) -> some View {
+        let distance = obs.distance(from: model.referenceLocation)
+        let favorite = model.state.settings.favoriteStores.contains { $0.id == obs.storeKey }
+        // La fiche du magasin connu (horaires, site…) plutôt qu'une copie faite depuis le relevé.
+        if let store = model.knownStores.first(where: { $0.id == obs.storeKey }) ?? obs.store {
+            NavigationLink(value: store) {
+                CompareRow(obs: obs, rank: rank, distance: distance, cheapest: cheapest, favorite: favorite)
+            }
+            .accessibilityIdentifier("whereToFindRow")
+        } else {
+            CompareRow(obs: obs, rank: rank, distance: distance, cheapest: cheapest, favorite: favorite)
         }
     }
 

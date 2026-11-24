@@ -145,6 +145,8 @@ struct OPPrice: Decodable {
     let productName: String?
     let price: Double
     let priceIsDiscounted: Bool?
+    /// Prix barré quand le prix est une promo.
+    let priceWithoutDiscount: Double?
     let currency: String?
     let date: String?
     let locationId: Int?
@@ -154,7 +156,7 @@ struct OPPrice: Decodable {
     let location: OPLocation?
 
     private enum CodingKeys: String, CodingKey {
-        case id, productCode, productName, price, priceIsDiscounted, currency, date
+        case id, productCode, productName, price, priceIsDiscounted, priceWithoutDiscount, currency, date
         case locationId, locationOsmId, locationOsmType, product, location
     }
 
@@ -168,6 +170,7 @@ struct OPPrice: Decodable {
         productCode = c.lossyString(.productCode)
         productName = c.lossyString(.productName)
         priceIsDiscounted = c.lossyBool(.priceIsDiscounted)
+        priceWithoutDiscount = c.lossyDouble(.priceWithoutDiscount)
         currency = c.lossyString(.currency)
         date = c.lossyString(.date)
         locationId = c.lossyInt(.locationId)
@@ -250,6 +253,21 @@ enum OpenPricesAPI {
             "radius_km": km(radiusKm),
             "order_by": "-date",
             "size": "60",
+        ])
+        return page.items
+    }
+
+    /// Promotions relevées autour d'un point ces dernières semaines (tous produits).
+    static func recentDiscountsNear(lat: Double, lon: Double, radiusKm: Double) async throws -> [OPPrice] {
+        let page: OPPage<OPPrice> = try await HTTP.get(base + "/prices", query: [
+            "type": "PRODUCT",
+            "price_is_discounted": "true",
+            "lat": coord(lat),
+            "lon": coord(lon),
+            "radius_km": km(radiusKm),
+            "date__gte": since(months: 1),
+            "order_by": "-date",
+            "size": "100",
         ])
         return page.items
     }

@@ -30,6 +30,8 @@ struct PriceObservation: Identifiable, Hashable {
     let chainName: String?
     let countryCode: String?
     let source: Source
+    /// Prix sans la remise (prix barré) quand il est connu.
+    var regularPrice: Double? = nil
 
     var product: Product {
         Product(code: productCode, name: productName, brand: brand, quantity: quantity, imageURL: imageURL,
@@ -154,6 +156,25 @@ struct BasketResult {
     /// Produits sans aucun prix connu (ni local, ni estimation).
     var unknown: [ShoppingItem] = []
 
+    /// Meilleur prix de chaque article (clé : identifiant de l'article) : le vrai relevé le moins cher,
+    /// sinon l'estimation la moins chère d'une enseigne proche.
+    var bestLines: [UUID: BasketLine] {
+        var result: [UUID: BasketLine] = [:]
+        for line in stores.flatMap(\.lines) {
+            if let known = result[line.item.id] {
+                // Un vrai relevé passe avant une estimation, puis le moins cher.
+                let keepKnown = known.isEstimate == line.isEstimate ? known.price <= line.price : !known.isEstimate
+                if keepKnown { continue }
+            }
+            result[line.item.id] = line
+        }
+        for line in bestSplit {
+            if let known = result[line.item.id], !known.isEstimate, known.price <= line.price { continue }
+            result[line.item.id] = line
+        }
+        return result
+    }
+
     var bestSplitTotal: Double { bestSplit.reduce(0) { $0 + $1.subtotal } }
     var bestSplitStoreCount: Int { Set(bestSplit.map(\.storeKey)).count }
 
@@ -203,7 +224,7 @@ extension PriceEngine {
         var byStore: [String: Promotion] = [:]
         for obs in observations where obs.isDiscounted && obs.date >= limit {
             if let current = byStore[obs.storeKey], current.observation.date >= obs.date { continue }
-            let regular = observations
+            let regular = obs.regularPrice ?? observations
                 .filter { $0.storeKey == obs.storeKey && !$0.isDiscounted && $0.price > obs.price }
                 .max { $0.date < $1.date }?.price
             byStore[obs.storeKey] = Promotion(observation: obs, regularPrice: regular)
@@ -305,7 +326,8 @@ enum PriceEngine {
                 chainKey: loc?.chainKey,
                 chainName: loc?.chainName,
                 countryCode: loc?.osmAddressCountryCode?.uppercased(),
-                source: .community
+                source: .community,
+                regularPrice: (p.priceIsDiscounted ?? false) ? p.priceWithoutDiscount : nil
             )
         }
     }
@@ -334,7 +356,8 @@ enum PriceEngine {
                 chainKey: m.store.chainKey,
                 chainName: m.store.chainName,
                 countryCode: nil,
-                source: .mine
+                source: .mine,
+                regularPrice: m.isDiscounted ? m.oldPrice : nil
             )
         }
     }

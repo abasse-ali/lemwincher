@@ -205,6 +205,8 @@ struct MyPrice: Identifiable, Codable, Hashable {
     var currency: String
     var date: Date
     var isDiscounted: Bool = false
+    /// Prix barré affiché à côté du prix promo (lu sur le site de l'enseigne), s'il est connu.
+    var oldPrice: Double? = nil
     /// Identifiant du prix sur Open Prices s'il a été partagé.
     var sharedPriceID: Int?
     /// Origine du relevé quand il ne vient pas du magasin lui-même ("site Carrefour").

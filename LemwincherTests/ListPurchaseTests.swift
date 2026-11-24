@@ -46,6 +46,22 @@ final class ListPurchaseTests: XCTestCase {
         XCTAssertEqual(quote.store?.id, aldi.id)
     }
 
+    /// Prix affiché à côté de chaque article de la liste : le moins cher, un vrai relevé avant une estimation.
+    func testBestPriceShownNextToEachItem() throws {
+        var result = basket
+        let lines = result.bestLines
+        XCTAssertEqual(try XCTUnwrap(lines[eggs.id]?.price), 1.95, accuracy: 1e-9)
+        XCTAssertEqual(lines[eggs.id]?.storeName, "Lidl Minimes")
+        XCTAssertEqual(try XCTUnwrap(lines[milk.id]?.price), 0.99, accuracy: 1e-9)
+
+        // Une estimation moins chère ne remplace pas un vrai prix relevé.
+        result.stores.append(StoreBasket(storeKey: leclerc.id, storeName: leclerc.name, store: leclerc,
+                                         lines: [BasketLine(item: milk, price: 0.79, currency: "EUR", isEstimate: true,
+                                                            storeKey: leclerc.id, storeName: leclerc.name)]))
+        XCTAssertEqual(try XCTUnwrap(result.bestLines[milk.id]?.price), 0.99, accuracy: 1e-9)
+        XCTAssertNil(result.bestLines[UUID()])
+    }
+
     func testCheapestStoreWhenTheBestStoreLacksTheProduct() throws {
         let cheese = ShoppingItem(product: .custom(named: "Comté"))
         var result = basket

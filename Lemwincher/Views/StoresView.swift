@@ -3,7 +3,7 @@ import MapKit
 
 /// Écrans ouverts depuis « Autour de moi » (tuiles de la carte héros).
 enum StoresRoute: Hashable {
-    case fuel, ranking
+    case fuel, ranking, promotions
 }
 
 /// Onglet "Autour de moi" : carte, enseignes les moins chères et liste des magasins proches.
@@ -67,6 +67,7 @@ struct StoresView: View {
                 switch route {
                 case .fuel: FuelView()
                 case .ranking: ChainRankingView()
+                case .promotions: PromotionsView()
                 }
             }
             .sheet(item: selectedStore) { store in
@@ -85,7 +86,8 @@ struct StoresView: View {
             // Carburants et classement des enseignes en parallèle.
             async let fuel: Void = model.refreshFuel()
             async let ranking: Void = model.refreshChainIndex()
-            _ = await (fuel, ranking)
+            async let promos: Void = model.refreshPromos()
+            _ = await (fuel, ranking, promos)
         }
         .task(id: searchText) { await searchPlans() }
         // La carte se cadre sur les résultats de la recherche (et revient aux magasins proches ensuite).
@@ -234,6 +236,8 @@ struct StoresView: View {
                     .clearListRow(top: 4, bottom: 4)
             }
 
+            promoSection
+
             if !favorites.isEmpty {
                 Section("Mes magasins") {
                     ForEach(favorites) { store in
@@ -251,7 +255,21 @@ struct StoresView: View {
 
             Section {
                 Toggle(isOn: openNowOnly) {
-                    Label("Ouverts maintenant", systemImage: "clock")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Ouverts maintenant", systemImage: "clock")
+                        let unknown = model.storesWithUnknownHours
+                        if unknown > 0 {
+                            Text(unknown == 1 ? "1 magasin aux horaires inconnus masqué"
+                                              : "\(unknown) magasins aux horaires inconnus masqués")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .accessibilityIdentifier("openNowToggle")
+                if openNowOnly.wrappedValue && visible.isEmpty && !model.stores.isEmpty {
+                    Text("Aucun magasin ouvert en ce moment parmi ceux dont on connaît les horaires.")
+                        .foregroundStyle(.secondary)
                 }
                 if model.storesLoading && model.stores.isEmpty {
                     HStack(spacing: 10) {
@@ -296,6 +314,7 @@ struct StoresView: View {
         .refreshable {
             await model.refreshStores(force: true)
             await model.refreshFuel(force: true)
+            await model.refreshPromos(force: true)
         }
     }
 
@@ -345,6 +364,75 @@ struct StoresView: View {
             Text("Sur Plans")
         } footer: {
             Text("Supermarchés trouvés par Plans, jusqu'à 25 km environ. Touchez-en un pour sa fiche : itinéraire, site de l'enseigne, relevé de prix, ou l'ajouter à vos magasins.")
+        }
+    }
+
+    /// Promos autour de vous : carrousel des plus fortes remises, et lien vers la liste complète.
+    private var promoSection: some View {
+        let deals = model.promoDeals
+        return Section {
+            if deals.isEmpty {
+                HStack(spacing: 12) {
+                    Image(systemName: model.promosLoading ? "hourglass" : "tag")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 42, height: 42)
+                        .background(Color.red.gradient, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.promosLoading ? "Recherche des promos…" : "Pas encore de promo relevée")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Les promos lues sur les sites des enseignes (vos rayons suivis) et celles de la communauté apparaîtront ici.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.vertical, 4)
+            } else {
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: 12) {
+                        ForEach(deals.prefix(15)) { deal in
+                            Button {
+                                path.append(deal.product)
+                            } label: {
+                                PromoCard(deal: deal)
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button {
+                                    model.addToList(deal.product)
+                                } label: {
+                                    Label("Ajouter à ma liste", systemImage: "cart.badge.plus")
+                                }
+                                if let store = deal.observation.store {
+                                    Button {
+                                        path.append(model.knownStores.first { $0.id == store.id } ?? store)
+                                    } label: {
+                                        Label("Voir \(deal.storeName)", systemImage: "storefront")
+                                    }
+                                }
+                            }
+                            .accessibilityIdentifier("promoCard")
+                        }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollIndicators(.hidden)
+                .scrollTargetBehavior(.viewAligned)
+                .scrollClipDisabled()
+                .clearListRow(top: 2, bottom: 2)
+            }
+        } header: {
+            HStack {
+                Text("Promos autour de vous")
+                Spacer()
+                if !deals.isEmpty {
+                    Button("Tout voir (\(deals.count))") { path.append(StoresRoute.promotions) }
+                        .font(.subheadline.weight(.semibold))
+                        .textCase(nil)
+                        .accessibilityIdentifier("allPromosLink")
+                }
+            }
         }
     }
 

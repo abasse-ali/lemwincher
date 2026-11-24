@@ -124,6 +124,7 @@ enum CaptureUpdater {
                     result[index].source = source
                     // Photo, marque ou contenance apparues depuis : on les garde.
                     if result[index].product.imageURL == nil { result[index].product.imageURL = product.imageURL }
+                    if item.promo { result[index].oldPrice = item.oldPrice ?? result[index].oldPrice }
                     updates.append(PriceUpdate(product: product, price: item.price, kind: .unchanged))
                     continue
                 }
@@ -134,6 +135,7 @@ enum CaptureUpdater {
             var entry = MyPrice(product: product, store: store, price: item.price, currency: currency, date: now)
             entry.source = source
             entry.isDiscounted = item.promo
+            entry.oldPrice = item.promo ? item.oldPrice : nil
             result.append(entry)
         }
         return (result, updates)

@@ -85,11 +85,55 @@ final class OpeningHoursTests: XCTestCase {
 
     func testUnsupportedSyntaxReturnsNil() {
         XCTAssertNil(OpeningHours("sunrise-sunset"))
-        XCTAssertNil(OpeningHours("Mo-Sa 08:00-20:00 \"sur rendez-vous\""))
         XCTAssertNil(OpeningHours(""))
         XCTAssertNil(OpeningHours("PH off"))
         XCTAssertNil(OpeningHours("Jan-Mar Mo-Fr 08:00-18:00"))
-        XCTAssertNil(OpeningHours("Mo-Fr 8h-20h"))
+        XCTAssertNil(OpeningHours("\"sur rendez-vous\""))
+    }
+
+    /// Une règle inconnue (mois, date, commentaire) n'empêche plus de lire les autres.
+    func testRulesThatAreUnderstoodAreKept() throws {
+        let christmas = try hours("Mo-Sa 08:30-20:00; Su 09:00-12:30; Dec 24,31 08:30-18:00; Jan 01 off")
+        XCTAssertEqual(christmas.week[0], [OpeningHours.Span(start: 510, end: 1200)])
+        XCTAssertEqual(christmas.week[6], [OpeningHours.Span(start: 540, end: 750)])
+        XCTAssertTrue(christmas.status(at: Fixtures.date(2026, 11, 16, 10), calendar: cal).isOpen)
+
+        let comment = try hours("Mo-Sa 08:00-20:00 \"sur rendez-vous\"")
+        XCTAssertEqual(comment.week[5], [OpeningHours.Span(start: 480, end: 1200)])
+
+        let fallback = try hours("Mo-Fr 09:00-19:00 || \"fermé pendant les vacances\"")
+        XCTAssertTrue(fallback.week[5].isEmpty)
+
+        let open = try hours("Mo-Sa 08:30-20:00 open; Su off")
+        XCTAssertFalse(open.week[2].isEmpty)
+        XCTAssertTrue(open.week[6].isEmpty)
+    }
+
+    func testFrenchWritingIsUnderstood() throws {
+        let h = try hours("Mo-Fr 8h-20h")
+        XCTAssertEqual(h.week[0], [OpeningHours.Span(start: 480, end: 1200)])
+        let french = try hours("lu-sa 8h30-12h30,14h-19h; di fermé")
+        XCTAssertEqual(french.week[5], [OpeningHours.Span(start: 510, end: 750), OpeningHours.Span(start: 840, end: 1140)])
+        XCTAssertTrue(french.week[6].isEmpty)
+    }
+
+    /// « Ouverts maintenant » : seulement les magasins dont on sait qu'ils sont ouverts.
+    func testOpenNowHidesStoresWithUnknownHours() {
+        let model = AppModel(arguments: ["-uitest"])
+        var always = Fixtures.store("NODE:101", name: "Ouvert 24/7")
+        always.openingHours = "24/7"
+        var never = Fixtures.store("NODE:102", name: "Jamais ouvert")
+        never.openingHours = "Mo-Su off"
+        let unknown = Fixtures.store("NODE:103", name: "Horaires inconnus")
+        model.stores = [always, never, unknown]
+        model.state.settings.supermarketsOnly = false
+        model.state.settings.openNowOnly = false
+        XCTAssertEqual(model.visibleStores.count, 3)
+        XCTAssertEqual(model.storesWithUnknownHours, 0)
+
+        model.state.settings.openNowOnly = true
+        XCTAssertEqual(model.visibleStores.map(\.id), ["NODE:101"])
+        XCTAssertEqual(model.storesWithUnknownHours, 1)
     }
 
     func testClockFormatting() {
