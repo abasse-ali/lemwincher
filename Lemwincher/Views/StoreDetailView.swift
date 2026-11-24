@@ -134,6 +134,14 @@ struct StoreDetailView: View {
                     }
                     .accessibilityIdentifier("storeTrackedPage")
                 }
+                // Mauvais drive choisi sur le site : on repart de zéro pour ce magasin (les autres ne bougent pas).
+                if model.state.sitePages.contains(where: { $0.store.id == store.id }) {
+                    Button(role: .destructive) {
+                        model.forgetSites(of: store)
+                    } label: {
+                        Label("Oublier le drive choisi sur le site", systemImage: "arrow.counterclockwise")
+                    }
+                }
                 // Site propre du magasin (en plus de celui de l'enseigne), ouvert dans l'app pour en lire les prix.
                 if let website = store.websiteURL, DriveSite.forStore(store) != nil {
                     Button {

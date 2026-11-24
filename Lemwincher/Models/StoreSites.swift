@@ -1,4 +1,30 @@
 import Foundation
+import CryptoKit
+import WebKit
+
+extension Store {
+    /// Identifiant de la mémoire du navigateur propre à ce magasin (toujours le même pour un magasin).
+    var siteDataID: UUID {
+        let b = Array(SHA256.hash(data: Data(("lemwincher-site:" + id).utf8)))
+        return UUID(uuid: (b[0], b[1], b[2], b[3], b[4], b[5], (b[6] & 0x0F) | 0x50, b[7],
+                           (b[8] & 0x3F) | 0x80, b[9], b[10], b[11], b[12], b[13], b[14], b[15]))
+    }
+}
+
+/// Mémoire du navigateur (cookies, magasin choisi sur le site, connexion) : une par magasin.
+/// Les drives retiennent le magasin choisi dans leurs cookies : avec une mémoire commune, choisir
+/// Leclerc Saint-Orens remplaçait Leclerc Blagnac. Chaque magasin garde désormais le sien.
+enum SiteData {
+    static func store(for store: Store?) -> WKWebsiteDataStore {
+        guard let store else { return .default() }
+        return WKWebsiteDataStore(forIdentifier: store.siteDataID)
+    }
+
+    /// Oublie ce que les sites retiennent pour ce magasin (drive choisi, connexion).
+    static func forget(_ store: Store) {
+        WKWebsiteDataStore.remove(forIdentifier: store.siteDataID) { _ in }
+    }
+}
 
 /// La page du site d'une enseigne retenue pour un magasin : son drive choisi, le dernier rayon consulté.
 /// Le site se rouvre directement là depuis ce magasin, et les prix lus sur ce site lui sont rattachés d'office.

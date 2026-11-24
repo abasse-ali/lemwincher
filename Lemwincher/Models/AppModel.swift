@@ -512,6 +512,13 @@ final class AppModel {
         state.sitePages.filter { $0.siteID == siteID }.max { $0.updated < $1.updated }
     }
 
+    /// Oublie le site de ce magasin : page retenue et mémoire du navigateur (drive choisi, connexion).
+    func forgetSites(of store: Store) {
+        state.sitePages.removeAll { $0.store.id == store.id }
+        SiteData.forget(store)
+        Log.info(.sites, "Site oublié pour \(store.name)")
+    }
+
     /// Retient la page du site où l'on est pour ce magasin (sans connexion, compte, panier…).
     func rememberSitePage(store: Store, site: DriveSite, url: URL, title: String?) {
         guard StoreSitePage.isWorthRemembering(url, on: site) else { return }
@@ -828,14 +835,15 @@ final class AppModel {
         guard !due.isEmpty else { return }
         trackedRefreshing = true
         defer { trackedRefreshing = false }
-        let session = CaptureSession(viewport: CGRect(x: 0, y: 0, width: 390, height: 844))
-        // Dans la fenêtre (derrière l'interface) : le site charge tous ses produits comme à l'écran.
-        session.attachBehindInterface()
-        defer { session.detachFromInterface() }
         let currency = state.settings.currency
         for page in due {
             guard let url = URL(string: page.url) else { continue }
+            // La mémoire du site de ce magasin : son drive choisi (Leclerc Blagnac ≠ Leclerc Saint-Orens).
+            let session = CaptureSession(viewport: CGRect(x: 0, y: 0, width: 390, height: 844), siteStore: page.store)
+            // Dans la fenêtre (derrière l'interface) : le site charge tous ses produits comme à l'écran.
+            session.attachBehindInterface()
             let json = await session.capture(url: url, maxMs: 60_000)
+            session.detachFromInterface()
             let items = DriveCaptureParser.parse(json)
             guard let index = state.trackedPages.firstIndex(where: { $0.id == page.id }) else { continue }
             state.trackedPages[index].lastChecked = Date()

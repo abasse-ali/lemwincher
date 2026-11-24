@@ -22,6 +22,14 @@ final class StoreSiteTests: XCTestCase {
             try XCTUnwrap(URL(string: "https://www.aldi.fr/produits/surgeles/frites.html")), on: aldi))
     }
 
+    func testEachStoreHasItsOwnBrowserMemory() {
+        let blagnac = Fixtures.store("NODE:1", name: "E.Leclerc Blagnac", brand: "E.Leclerc")
+        let saintOrens = Fixtures.store("NODE:2", name: "E.Leclerc Saint-Orens", brand: "E.Leclerc")
+        XCTAssertNotEqual(blagnac.siteDataID, saintOrens.siteDataID, "Blagnac et Saint-Orens : deux drives distincts")
+        XCTAssertEqual(blagnac.siteDataID, Fixtures.store("NODE:1", name: "Autre nom").siteDataID,
+                       "toujours la même mémoire pour un même magasin")
+    }
+
     func testEachStoreKeepsItsSitePage() throws {
         let model = AppModel(arguments: ["-uitest"])
         let leclerc = try XCTUnwrap(DriveSite.all.first { $0.id == "leclerc" })

@@ -12,9 +12,10 @@ final class CaptureSession: NSObject, ObservableObject, WKScriptMessageHandler, 
     @Published var withoutPrice: [String] = []
 
     /// `viewport` : taille de la page pour une lecture invisible (mise à jour automatique des rayons suivis).
-    init(viewport: CGRect = .zero) {
+    /// `siteStore` : le magasin dont on utilise la mémoire du site (son drive choisi) ; sinon la mémoire commune.
+    init(viewport: CGRect = .zero, siteStore: Store? = nil) {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .default()
+        configuration.websiteDataStore = SiteData.store(for: siteStore)
         // Intermédiaire « faible » : sinon la page web garderait la session en vie (et inversement).
         let relay = WeakScriptRelay()
         configuration.userContentController.add(relay, name: "lemwincher")
@@ -184,7 +185,9 @@ struct DriveCaptureView: View {
     let customSite: DriveSite?
 
     @State private var site: DriveSite
-    @StateObject private var session = CaptureSession()
+    /// Magasin dont la mémoire du site est utilisée (son drive choisi, sa connexion).
+    private let dataOwner: Store?
+    @StateObject private var session: CaptureSession
     @State private var didLoad = false
     /// Prix lus sur la page, transmis tels quels à la feuille de vérification
     /// (avec `sheet(isPresented:)`, la feuille pouvait s'ouvrir avec une liste encore vide).
@@ -217,7 +220,13 @@ struct DriveCaptureView: View {
             guard let preferredChain else { return false }
             return preferredChain.hasPrefix(site.chainPrefix)
         }
-        _site = State(initialValue: customSite ?? preferred ?? DriveSite.all[1])
+        let initialSite = customSite ?? preferred ?? DriveSite.all[1]
+        _site = State(initialValue: initialSite)
+        // La mémoire du site de ce magasin (Leclerc Blagnac et Leclerc Saint-Orens ont chacun la leur) ;
+        // sans magasin, celle du dernier drive utilisé sur ce site.
+        let owner = store ?? AppModel.shared.lastSitePage(siteID: initialSite.id)?.store
+        dataOwner = owner
+        _session = StateObject(wrappedValue: CaptureSession(siteStore: owner))
     }
 
     private var sites: [DriveSite] {
@@ -360,9 +369,12 @@ struct DriveCaptureView: View {
         }
     }
 
-    /// Magasin auquel rattacher ce site : celui d'où l'on vient, sinon celui du dernier drive utilisé sur ce site.
+    /// Magasin auquel rattacher ce site : celui d'où l'on vient, sinon celui du dernier drive utilisé sur ce site ;
+    /// seulement un magasin de cette enseigne (on a pu changer d'enseigne dans la barre).
     private var siteStore: Store? {
-        store ?? model.lastSitePage(siteID: site.id)?.store
+        [store, dataOwner, model.lastSitePage(siteID: site.id)?.store]
+            .compactMap { $0 }
+            .first { site.matches($0) || site.id == "magasin-" + $0.id }
     }
 
     private func rememberCurrentPage() {
