@@ -22,6 +22,33 @@ final class StoreSiteTests: XCTestCase {
             try XCTUnwrap(URL(string: "https://www.aldi.fr/produits/surgeles/frites.html")), on: aldi))
     }
 
+    func testDriveNumberInTheAddressPicksTheStore() throws {
+        let leclerc = try XCTUnwrap(DriveSite.all.first { $0.id == "leclerc" })
+        let saintOrensPage = try XCTUnwrap(URL(string: "https://m-courses.leclercdrive.fr/magasin-123121-123121/rayon/284251"))
+        XCTAssertEqual(StoreSitePage.driveKey(of: saintOrensPage), "123121")
+        XCTAssertNil(StoreSitePage.driveKey(of: try XCTUnwrap(URL(string: "https://www.aldi.fr/produits/surgeles.html"))))
+        XCTAssertFalse(StoreSitePage.isWorthRemembering(
+            try XCTUnwrap(URL(string: "https://fd7-courses.leclercdrive.fr/PageDir/pgeWCSD002_Erreur.aspx")), on: leclerc),
+                       "une page d'erreur n'est jamais retenue")
+
+        let model = AppModel(arguments: ["-uitest"])
+        let blagnac = Fixtures.store("NODE:1", name: "E.Leclerc Blagnac", brand: "E.Leclerc")
+        let saintOrens = Fixtures.store("NODE:2", name: "E.Leclerc Saint-Orens", brand: "E.Leclerc")
+        model.rememberSitePage(store: blagnac, site: leclerc,
+                               url: try XCTUnwrap(URL(string: "https://m-courses.leclercdrive.fr/magasin-143111-143111/")),
+                               title: nil)
+        model.rememberSitePage(store: saintOrens, site: leclerc, url: saintOrensPage, title: nil)
+        XCTAssertEqual(model.store(forDriveOf: saintOrensPage, siteID: "leclerc")?.id, "NODE:2")
+        XCTAssertEqual(model.store(forDriveOf: saintOrensPage)?.id, "NODE:2", "sans site : même domaine")
+
+        // Le drive de Saint-Orens parcouru depuis la fiche de Blagnac : retenu pour Saint-Orens, Blagnac ne bouge pas.
+        model.rememberSitePage(store: blagnac, site: leclerc,
+                               url: try XCTUnwrap(URL(string: "https://m-courses.leclercdrive.fr/magasin-123121-123121/rayon/9")),
+                               title: "Laitages")
+        XCTAssertEqual(model.sitePage(for: blagnac, siteID: "leclerc")?.driveKey, "143111")
+        XCTAssertEqual(model.sitePage(for: saintOrens, siteID: "leclerc")?.displayTitle, "Laitages")
+    }
+
     func testEachStoreHasItsOwnBrowserMemory() {
         let blagnac = Fixtures.store("NODE:1", name: "E.Leclerc Blagnac", brand: "E.Leclerc")
         let saintOrens = Fixtures.store("NODE:2", name: "E.Leclerc Saint-Orens", brand: "E.Leclerc")

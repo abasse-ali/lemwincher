@@ -109,7 +109,8 @@ final class AppModel {
     // MARK: Magasins
 
     @MainActor
-    func refreshStores() async {
+    /// `force` : bouton ↻ ou « tirer pour rafraîchir » ; sinon une liste complète de moins de 3 jours suffit.
+    func refreshStores(force: Bool = false) async {
         guard let ref = referenceLocation else { return }
         refreshGeneration += 1
         let generation = refreshGeneration
@@ -121,6 +122,15 @@ final class AppModel {
         if stores.isEmpty, let cached = StoreCache.load(near: ref, radiusKm: radius) {
             applyStores(cached.stores, source: cacheSource(cached))
             if let code = cached.countryCode { detectedCountry = code }
+        }
+        // Liste complète récente : inutile de réinterroger OpenStreetMap, souvent saturé
+        // (une demi-minute d'attente et des erreurs dans le journal à chaque ouverture).
+        if !force, let cached = StoreCache.load(near: ref, radiusKm: radius), !cached.stores.isEmpty,
+           Date().timeIntervalSince(cached.date) < 3 * 86_400 {
+            applyStores(cached.stores, source: cacheSource(cached))
+            if let code = cached.countryCode { detectedCountry = code }
+            storesLoading = false
+            return
         }
 
         let result = await StoreFinder.nearby(lat: ref.coordinate.latitude,
@@ -519,9 +529,26 @@ final class AppModel {
         Log.info(.sites, "Site oublié pour \(store.name)")
     }
 
+    /// Le magasin dont le drive est celui de cette page (Leclerc : « magasin-123121 » dans l'adresse) ;
+    /// sans site précisé, parmi les pages retenues du même site (même domaine).
+    func store(forDriveOf url: URL, siteID: String? = nil) -> Store? {
+        guard let key = StoreSitePage.driveKey(of: url) else { return nil }
+        let host = url.host?.lowercased() ?? ""
+        return state.sitePages.first { page in
+            guard page.driveKey == key else { return false }
+            if let siteID { return page.siteID == siteID }
+            return URL(string: page.url)?.host.map { StoreSitePage.sameDomain($0.lowercased(), host) } ?? false
+        }?.store
+    }
+
     /// Retient la page du site où l'on est pour ce magasin (sans connexion, compte, panier…).
+    /// Une page du drive d'un autre magasin (Saint-Orens ouvert depuis Blagnac) va à ce magasin-là.
     func rememberSitePage(store: Store, site: DriveSite, url: URL, title: String?) {
         guard StoreSitePage.isWorthRemembering(url, on: site) else { return }
+        var store = store
+        if let owner = self.store(forDriveOf: url, siteID: site.id), owner.id != store.id {
+            store = owner
+        }
         let page = StoreSitePage(store: store, siteID: site.id, siteName: site.name, url: url.absoluteString,
                                  title: title?.trimmed.nilIfBlank, updated: Date())
         if let index = state.sitePages.firstIndex(where: { $0.id == page.id }) {
@@ -836,9 +863,19 @@ final class AppModel {
         trackedRefreshing = true
         defer { trackedRefreshing = false }
         let currency = state.settings.currency
-        for page in due {
+        for var page in due {
             guard let url = URL(string: page.url) else { continue }
+            // La page dit son drive (Leclerc : « magasin-123121 ») : rayon rattaché par erreur à un autre
+            // magasin de l'enseigne -> rendu au bon magasin.
+            if let owner = store(forDriveOf: url), owner.id != page.store.id,
+               let index = state.trackedPages.firstIndex(where: { $0.id == page.id }) {
+                Log.info(.tracked, "Rayon « \(page.shortTitle) » rattaché à \(owner.name) (au lieu de \(page.store.name))",
+                         details: "Drive de la page : \(Log.describe(url))")
+                state.trackedPages[index].store = owner
+                page.store = owner
+            }
             // La mémoire du site de ce magasin : son drive choisi (Leclerc Blagnac ≠ Leclerc Saint-Orens).
+            await SiteData.prepare(page.store)
             let session = CaptureSession(viewport: CGRect(x: 0, y: 0, width: 390, height: 844), siteStore: page.store)
             // Dans la fenêtre (derrière l'interface) : le site charge tous ses produits comme à l'écran.
             session.attachBehindInterface()

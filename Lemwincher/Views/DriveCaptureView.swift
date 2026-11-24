@@ -350,9 +350,11 @@ struct DriveCaptureView: View {
                     dismiss()
                 }
             }
-            .onAppear {
+            .task {
                 guard !didLoad else { return }
                 didLoad = true
+                // Mémoire du site de ce magasin prête (cookies repris de l'ancienne mémoire commune si vide).
+                await SiteData.prepare(dataOwner)
                 if let startURL {
                     session.webView.load(URLRequest(url: startURL))
                 } else {
@@ -372,7 +374,11 @@ struct DriveCaptureView: View {
     /// Magasin auquel rattacher ce site : celui d'où l'on vient, sinon celui du dernier drive utilisé sur ce site ;
     /// seulement un magasin de cette enseigne (on a pu changer d'enseigne dans la barre).
     private var siteStore: Store? {
-        [store, dataOwner, model.lastSitePage(siteID: site.id)?.store]
+        // La page dit elle-même son drive (Leclerc : « magasin-123121 ») : son magasin d'abord.
+        if let url = session.webView.url, let owner = model.store(forDriveOf: url, siteID: site.id) {
+            return owner
+        }
+        return [store, dataOwner, model.lastSitePage(siteID: site.id)?.store]
             .compactMap { $0 }
             .first { site.matches($0) || site.id == "magasin-" + $0.id }
     }

@@ -23,6 +23,22 @@ enum SiteData {
     /// Oublie ce que les sites retiennent pour ce magasin (drive choisi, connexion).
     static func forget(_ store: Store) {
         WKWebsiteDataStore.remove(forIdentifier: store.siteDataID) { _ in }
+        UserDefaults.standard.removeObject(forKey: seededKey(store))
+    }
+
+    private static func seededKey(_ store: Store) -> String { "siteDataSeeded." + store.siteDataID.uuidString }
+
+    /// Première utilisation de la mémoire d'un magasin : si elle est vide, elle reprend les cookies de l'ancienne
+    /// mémoire commune (drive déjà choisi, connexion), pour que ses rayons suivis continuent d'être lus.
+    @MainActor
+    static func prepare(_ store: Store?) async {
+        guard let store, !UserDefaults.standard.bool(forKey: seededKey(store)) else { return }
+        UserDefaults.standard.set(true, forKey: seededKey(store))
+        let target = WKWebsiteDataStore(forIdentifier: store.siteDataID).httpCookieStore
+        guard await target.allCookies().isEmpty else { return }
+        for cookie in await WKWebsiteDataStore.default().httpCookieStore.allCookies() {
+            await target.setCookie(cookie)
+        }
     }
 }
 
@@ -61,9 +77,25 @@ struct StoreSitePage: Codable, Equatable, Identifiable {
         let text = (url.path + "?" + (url.query ?? "")).lowercased()
         let excluded = ["login", "connexion", "identification", "compte", "account", "panier", "cart", "checkout",
                         "paiement", "payment", "captcha", "commande", "mot-de-passe", "password", "logout",
-                        "deconnexion", "inscription", "signin", "signup"]
+                        "deconnexion", "inscription", "signin", "signup", "erreur", "error", "404", "maintenance",
+                        "introuvable", "notfound"]
         return !excluded.contains { text.contains($0) }
     }
+
+    private static let drivePattern = try! NSRegularExpression(pattern: #"/magasin-(\d+)"#, options: [.caseInsensitive])
+
+    /// Numéro du drive écrit dans l'adresse (Leclerc Drive : « …/magasin-143111-143111/rayon/… » -> « 143111 ») :
+    /// la page dit elle-même de quel magasin elle montre les prix.
+    static func driveKey(of url: URL) -> String? {
+        let path = url.path
+        let ns = path as NSString
+        guard let match = drivePattern.firstMatch(in: path, range: NSRange(location: 0, length: ns.length)) else {
+            return nil
+        }
+        return ns.substring(with: match.range(at: 1))
+    }
+
+    var driveKey: String? { URL(string: url).flatMap(Self.driveKey(of:)) }
 
     /// « m-courses.leclercdrive.fr » et « www.leclercdrive.fr » : le même site.
     static func sameDomain(_ a: String, _ b: String) -> Bool {

@@ -55,7 +55,7 @@ struct StoresView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         model.locationManager.request()
-                        Task { await model.refreshStores() }
+                        Task { await model.refreshStores(force: true) }
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
@@ -294,7 +294,7 @@ struct StoresView: View {
         .contentMargins(.top, 12, for: .scrollContent)
         .scrollDismissesKeyboard(.immediately)
         .refreshable {
-            await model.refreshStores()
+            await model.refreshStores(force: true)
             await model.refreshFuel(force: true)
         }
     }
